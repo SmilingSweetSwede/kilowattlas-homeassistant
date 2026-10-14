@@ -23,7 +23,7 @@ The **Kilowattlas** {% term integration %} shares your rooftop solar production 
 - A Kilowattlas account. Sign in at [kilowattlas.com](https://kilowattlas.com).
 - A {% term sensor %} with device class `power` that reports your solar production in W, kW or MW, for example from your inverter or a production meter.
 
-The service is free. During setup you are asked to confirm that your installation's position, capacity and live production will be shown publicly on the Kilowattlas map, and that the shared production data is sold on to third parties: electricity market participants (forecasting and steering of other production) and service partners (detecting faults and contacting you). It is also used to give you benchmarks against similar installations. No personal identifier (name, account, e-mail) is shown publicly. Home Assistant's home position is sent to Kilowattlas as a suggestion for where the installation is; you confirm or adjust it on the website before approving the link.
+The service is free and the integration is open source. During setup you are asked to agree that your installation's position, capacity and live production are shown publicly on the Kilowattlas map, without any personal identifier (name, account, e-mail). Home Assistant's home position is sent once as a suggestion for where the installation is; you confirm or adjust it on the website before approving the link. Beyond the map, shared data is only used to compare your installation with similar ones. Any further use is a separate choice made on the website, never by this integration.
 
 {% include integrations/config_flow.md %}
 

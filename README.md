@@ -67,22 +67,31 @@ entities:
 
 ## Privacy & data sharing
 
-- **Your production readings** (kW with timestamp) are sent to Kilowattlas,
-  which stores 15-minute averages and keeps the raw readings only briefly. The
-  live value and history are shown **publicly** on the map at your
-  installation's location, without any personal identifier (no name, account
+The integration is open source and sends exactly three things:
+
+1. **Once, at linking:** Home Assistant's home position, as a suggestion for
+   where the installation is. You confirm or adjust it on the website before
+   anything is shown.
+2. **Continuously:** each reading from the power sensor you chose, as kW with
+   its timestamp. Nothing else from Home Assistant is sent. The exact request
+   is documented under *How it works* below.
+3. **On removal:** a request to revoke the sharing token.
+
+What Kilowattlas does with it:
+
+- Shows your installation's position, capacity and live production
+  **publicly** on the map, without any personal identifier (no name, account
   or e-mail).
-- **Your installation's position and capacity** are shown publicly on the map.
-  Home Assistant's home position is sent during linking as a suggestion only;
-  what is shown is the position you confirm on the website.
-- **The service is free for you; your data is sold on.** Kilowattlas sells the
-  shared production data to third parties. Electricity market participants use
-  it to make forecasts and steer other production so the power system runs more
-  efficiently. Service partners use it to see when an installation is not
-  performing as it should and to contact you about a fault. Your data is also
-  used to give you benchmarks of how your installation performs compared with
-  similar ones. This is the same kind of production data that your inverter
-  manufacturer's cloud most likely already collects and passes on.
+- Keeps 15-minute averages as your production history; raw readings are kept
+  only briefly.
+- Compares your installation's performance with similar installations.
+
+The service is free. **Kilowattlas does not sell your data.** Should
+Kilowattlas ever offer services that use shared data beyond the public map, for
+example fault alerts through a service partner or aggregated data for
+electricity-market forecasting, that will be a separate, explicit choice on the
+website which you can decline while keeping the map. This integration never
+switches such a choice on.
 
 ## Stopping and removing
 
