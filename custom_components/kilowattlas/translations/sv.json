@@ -1,0 +1,90 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dela din solelproduktion med Kilowattlas",
+        "description": "Kilowattlas bygger en publik, live-uppdaterad karta över solelproduktion av mätvärden som hushåll som ditt delar. Tjänsten är gratis för dig.\n\nInnan du fortsätter, det här händer:\n\n- Din hemposition i Home Assistant skickas till Kilowattlas som förslag på var din anläggning finns. Du kan justera den på webbplatsen innan du godkänner.\n- Anläggningens position, kapacitet och aktuella produktion visas publikt på kilowattlas.com. Inget namn, konto eller e-post visas.\n- Varje mätvärde från effektsensorn du väljer skickas så fort sensorn rapporterar det.\n- **Din data säljs vidare.** Kilowattlas säljer den delade produktionsdatan till tredje part: aktörer på elmarknaden använder den för att göra prognoser och styra annan produktion så att elsystemet blir effektivare, och servicepartner använder den för att se när en anläggning inte presterar som den ska, så att de kan kontakta dig om ett fel.\n- Din data används också för att ge dig riktvärden för hur din anläggning presterar jämfört med liknande anläggningar.\n- Du kan sluta när som helst: ta bort integrationen och radera sedan anläggningen på kilowattlas.com för att ta bort historiken.",
+        "data": {
+          "consent": "Jag förstår och godkänner att anläggningens position, kapacitet och produktion delas publikt och säljs vidare enligt ovan"
+        },
+        "data_description": {
+          "consent": "Krävs för att fortsätta."
+        }
+      },
+      "link": {
+        "title": "Godkänn kopplingen",
+        "description": "Öppna sidan, logga in och godkänn kopplingen:\n\n{verification_uri}\n\nDin kod: **{user_code}**\n\nDialogen fortsätter automatiskt när du har godkänt."
+      },
+      "sensor": {
+        "title": "Välj din solcellssensor",
+        "description": "Välj den effektsensor som visar din solelproduktion (i W, kW eller MW).",
+        "data": {
+          "power_sensor": "Solcellseffekt-sensor"
+        },
+        "data_description": {
+          "power_sensor": "Välj växelriktarens eller mätarens produktionssensor, inte hushållets förbrukning."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Koppla om Kilowattlas",
+        "description": "Kilowattlas accepterar inte längre kopplingen för den här anläggningen. Godkänn en ny koppling på webbplatsen för att fortsätta dela."
+      },
+      "reconfigure": {
+        "title": "Byt solcellssensor",
+        "description": "Välj effektsensorn som ska delas. Mätvärden som redan är köade behålls.",
+        "data": {
+          "power_sensor": "Solcellseffekt-sensor"
+        },
+        "data_description": {
+          "power_sensor": "Välj växelriktarens eller mätarens produktionssensor, inte hushållets förbrukning."
+        }
+      }
+    },
+    "progress": {
+      "wait_for_approval": "Väntar på att du godkänner kopplingen på kilowattlas.com. Öppna sidan, logga in och ange koden **{user_code}**:\n\n{verification_uri}"
+    },
+    "error": {
+      "cannot_connect": "Kunde inte ansluta",
+      "consent_required": "Du behöver godkänna innan integrationen kan dela din produktion."
+    },
+    "abort": {
+      "already_configured": "Anläggningen är redan ansluten",
+      "cannot_connect": "Kunde inte ansluta",
+      "expired": "Kopplingskoden gick ut innan den godkändes. Börja om för att få en ny kod.",
+      "reauth_successful": "Omkopplingen lyckades",
+      "reconfigure_successful": "Ändringen sparades",
+      "unique_id_mismatch": "Den godkända kopplingen tillhör en annan anläggning än den som kopplas om."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "shared_production": {
+        "name": "Delad produktion"
+      },
+      "sharing_status": {
+        "name": "Delningsstatus",
+        "state": {
+          "starting": "Startar",
+          "connected": "Ansluten",
+          "retrying": "Anslutningsfel, försöker igen",
+          "revoked": "Frånkopplad, åtkomst återkallad"
+        }
+      },
+      "last_sent": {
+        "name": "Senast skickat"
+      },
+      "queued_readings": {
+        "name": "Köade mätvärden"
+      },
+      "last_batch_rejected": {
+        "name": "Avvisade mätvärden i senaste sändning"
+      },
+      "measured_sample_interval": {
+        "name": "Uppmätt sensorintervall"
+      },
+      "unusable_readings": {
+        "name": "Oanvändbara mätvärden"
+      }
+    }
+  }
+}

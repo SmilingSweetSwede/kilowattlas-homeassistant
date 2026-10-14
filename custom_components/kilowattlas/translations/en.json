@@ -1,0 +1,90 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Share your solar production with Kilowattlas",
+        "description": "Kilowattlas builds a public, live map of solar production from readings shared by homes like yours. The service is free for you.\n\nBefore you continue, this is what happens:\n\n- Your Home Assistant home position is sent to Kilowattlas as a suggestion for where your installation is. You can adjust it on the website before approving.\n- Your installation's position, capacity and live production are shown publicly on kilowattlas.com. No name, account or e-mail is shown.\n- Every reading from the power sensor you choose is sent as soon as your sensor reports it.\n- **Your data is sold on.** Kilowattlas sells the shared production data to third parties: electricity market participants use it to make forecasts and steer other production so the power system runs more efficiently, and service partners use it to see when an installation is not performing as it should, so they can contact you about a fault.\n- Your data is also used to give you benchmarks of how your installation performs compared with similar ones.\n- You can stop at any time: remove this integration, then delete the installation on kilowattlas.com to erase its history.",
+        "data": {
+          "consent": "I understand and agree that my installation's position, capacity and production are shared publicly and sold on as described"
+        },
+        "data_description": {
+          "consent": "Required to continue."
+        }
+      },
+      "link": {
+        "title": "Approve the link",
+        "description": "Open this page, sign in and approve the link:\n\n{verification_uri}\n\nYour code: **{user_code}**\n\nThis dialog continues automatically once you have approved it."
+      },
+      "sensor": {
+        "title": "Choose your solar sensor",
+        "description": "Select the power sensor that reports your solar production (in W, kW or MW).",
+        "data": {
+          "power_sensor": "Solar power sensor"
+        },
+        "data_description": {
+          "power_sensor": "Pick the inverter or meter sensor that reports production, not household consumption."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-link Kilowattlas",
+        "description": "Kilowattlas no longer accepts the link for this installation. Approve a new link on the website to continue sharing."
+      },
+      "reconfigure": {
+        "title": "Change the solar sensor",
+        "description": "Choose the power sensor to share. Readings already queued are kept.",
+        "data": {
+          "power_sensor": "Solar power sensor"
+        },
+        "data_description": {
+          "power_sensor": "Pick the inverter or meter sensor that reports production, not household consumption."
+        }
+      }
+    },
+    "progress": {
+      "wait_for_approval": "Waiting for you to approve the link on kilowattlas.com. Open the page, sign in and enter code **{user_code}**:\n\n{verification_uri}"
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "consent_required": "You need to agree before the integration can share your production."
+    },
+    "abort": {
+      "already_configured": "Service is already configured",
+      "cannot_connect": "Failed to connect",
+      "expired": "The linking code expired before it was approved. Start over to get a new code.",
+      "reauth_successful": "Re-authentication was successful",
+      "reconfigure_successful": "Re-configuration was successful",
+      "unique_id_mismatch": "The approved link belongs to a different installation than the one being re-linked."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "shared_production": {
+        "name": "Shared production"
+      },
+      "sharing_status": {
+        "name": "Sharing status",
+        "state": {
+          "starting": "Starting",
+          "connected": "Connected",
+          "retrying": "Connection error, retrying",
+          "revoked": "Disconnected, access revoked"
+        }
+      },
+      "last_sent": {
+        "name": "Last sent"
+      },
+      "queued_readings": {
+        "name": "Queued readings"
+      },
+      "last_batch_rejected": {
+        "name": "Rejected readings in last batch"
+      },
+      "measured_sample_interval": {
+        "name": "Measured sensor interval"
+      },
+      "unusable_readings": {
+        "name": "Unusable readings"
+      }
+    }
+  }
+}

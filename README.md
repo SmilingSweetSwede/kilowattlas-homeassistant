@@ -1,170 +1,126 @@
-# Kilowattlas – Trace the Sun · Home Assistant integration
+# Kilowattlas · Home Assistant integration
 
-Share your rooftop solar production with [Kilowattlas](https://kilowattlas.com).
-The integration reads your existing solar **power** sensor and sends each new
-reading to Kilowattlas as soon as it arrives. Readings that can't be sent right
-away are queued locally and sent later, so a short network outage or a Home
-Assistant restart loses nothing.
+Share your rooftop solar production with [Kilowattlas](https://kilowattlas.com),
+a public live map of solar production. The integration reads your existing solar
+**power** sensor and sends every reading the moment your sensor reports it. Your
+inverter or meter sets the pace: readings arriving several times a second are
+sent several times a second, readings arriving once a minute once a minute.
+Nothing is sampled, thinned or averaged on the way. Readings that cannot be sent
+right away (network outage, Home Assistant restart) are queued locally and sent
+as soon as the connection is back, so nothing is lost.
+
+> **Upgrading from 0.3.x?** Version 0.4.0 renames the integration (domain
+> `kilowattlas_trace_the_sun` → `kilowattlas`) to match Home Assistant core
+> conventions. Remove the old integration, update via HACS, restart, and add
+> **Kilowattlas** again. The link on kilowattlas.com is re-approved in one step.
 
 ## Requirements
 
 - A Kilowattlas account (sign in at https://kilowattlas.com).
-- A Home Assistant **power** sensor reporting your solar output in W, kW, or MW
-  (e.g. from SolarEdge, Huawei, SMA, Fronius, a Shelly EM, or a P1/HAN meter).
-  An energy-only (kWh) sensor is **not** supported yet.
+- A Home Assistant **power** sensor reporting your solar output in W, kW or MW
+  (for example from SolarEdge, Huawei, SMA, Fronius, Solis, a Shelly EM or a
+  P1/HAN meter). An energy-only (kWh) sensor is **not** supported.
 
 ## Install (via HACS)
 
 [![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=SmilingSweetSwede&repository=kilowattlas-trace-the-sun&category=integration)
 
-1. Click the button above to open this repository in HACS, or add it manually:
-   HACS → ⋮ → **Custom repositories**, add this repo's URL with category
-   **Integration**.
-2. Install **Kilowattlas – Trace the Sun** and restart Home Assistant.
-3. **Settings → Devices & Services → Add Integration → Kilowattlas – Trace the Sun**.
+1. Click the button above, or add this repository manually in HACS
+   (⋮ → **Custom repositories**, category **Integration**).
+2. Install **Kilowattlas** and restart Home Assistant.
+3. **Settings → Devices & services → Add integration → Kilowattlas**.
 
 ## Linking
 
-The setup wizard uses a device-linking flow (no tokens to copy):
+1. Read what is shared and tick the consent box.
+2. Home Assistant shows a short **code** and a link to `kilowattlas.com/link`.
+   Open the link, sign in and approve. Your site's position is prefilled from
+   Home Assistant's home position; adjust it, add the panel capacity, approve.
+   The dialog in Home Assistant continues by itself once you have approved.
+3. Pick your solar power sensor. Done.
 
-1. Home Assistant shows you a short **code** and a link to `kilowattlas.com/link`.
-2. Open the link, sign in, and enter the code. Your site's position is prefilled
-   from Home Assistant — adjust it if needed, add the panel capacity, and approve.
-3. Back in Home Assistant, pick your solar power sensor. Done.
+To change the sensor later: **⋮ → Reconfigure** on the integration. If
+Kilowattlas ever stops accepting the link, Home Assistant asks you to re-link.
 
-From then on every reading from your sensor is sent to Kilowattlas, which turns
-them into 15-minute averages. Your production appears on the public Kilowattlas map (see
-*Privacy & data sharing* below).
+## What you get in Home Assistant
 
-## What you'll see in Home Assistant
+One **Kilowattlas** service device with:
 
-The integration adds two entities under the **Kilowattlas – Trace the Sun**
-device:
+- **Shared production** (kW) — the live value being shared. A proper power
+  sensor, so Home Assistant draws history and keeps long-term statistics.
+- **Sharing status** — Starting / Connected / Connection error, retrying /
+  Disconnected, access revoked.
+- Diagnostics: **Last sent**, **Queued readings**, **Rejected readings in last
+  batch**, and (disabled by default) **Measured sensor interval** and
+  **Unusable readings**.
+- A **Visit** link on the device that opens the map centred on your home.
 
-- **Shared production** — the live solar power being shared (kW). Because it's a
-  proper power sensor, Home Assistant draws a history graph and keeps long-term
-  statistics automatically — click it to see today's curve.
-- **Sharing status** — Connected / Disconnected / Connection error, plus
-  attributes for when data was last sent, how many readings are queued, and a
-  `map_url` link to your installation on the Kilowattlas map.
-
-### Add a graph card to your dashboard
-
-To show the production graph on your dashboard, add a card (Settings → Dashboards
-→ Edit → Add card → *Manual*) and paste:
+Example dashboard card:
 
 ```yaml
 type: history-graph
 title: Solar shared to Kilowattlas
 hours_to_show: 24
 entities:
-  - entity: sensor.kilowattlas_trace_the_sun_shared_production
+  - entity: sensor.kilowattlas_shared_production
 ```
-
-Or a richer combined card with the current value, status, and a link to your
-installation on the Kilowattlas map:
-
-```yaml
-type: vertical-stack
-cards:
-  - type: entities
-    title: Kilowattlas – Trace the Sun
-    entities:
-      - entity: sensor.kilowattlas_trace_the_sun_shared_production
-        name: Sharing now
-      - entity: sensor.kilowattlas_trace_the_sun_sharing_status
-        name: Status
-  - type: history-graph
-    hours_to_show: 24
-    entities:
-      - sensor.kilowattlas_trace_the_sun_shared_production
-  - type: markdown
-    content: >
-      [🗺️ View my installation on the Kilowattlas
-      map]({{ state_attr('sensor.kilowattlas_trace_the_sun_sharing_status',
-      'map_url') }})
-```
-
-The last card renders a clickable **"View my installation on the Kilowattlas
-map"** link that opens the map centred on your installation. (The URL comes from
-the `map_url` attribute on the status sensor, so it always points at the right
-place.)
-
-> The exact `entity_id` may differ slightly on your system — open the entity in
-> Settings → Devices & Services → Entities to confirm it, and adjust the YAML.
 
 ## Privacy & data sharing
 
-There are two separate kinds of data, treated differently:
-
-**Your production data** — each power reading (kW) with its timestamp.
-Kilowattlas combines these into 15-minute averages and keeps the individual
-readings only briefly (2 hours by default). This is tied to the site you registered, under your
-account. It is shown **publicly** on the Kilowattlas map, where anyone can see
-your installation's production at its location — but without any personal
-identifier (your name, account, or email are never shown). To stop sharing and
-erase this data, delete your installation on the Kilowattlas website — see
-*Stopping and removing* below.
-
-**Your site's static metadata** — its location, capacity, and source type
-(solar). By using this integration you agree that this metadata is contributed
-to the **OpenStreetMap** community via the [MapYourGrid](https://mapyourgrid.org)
-project, to help build an open map of the world's energy infrastructure.
-
-Please read this before you connect:
-
-- This applies **only** to static metadata (where the installation is and how big
-  it is). Your ongoing production readings are never shared this way.
-- OpenStreetMap data is published under the **Open Database License (ODbL)** and
-  is **public and permanent** — once contributed it can be downloaded and reused
-  by anyone, and cannot be fully retracted.
-- Your installation's location is derived from the coordinates you confirm during
-  setup. If you do not want your rooftop's location to become public OpenStreetMap
-  data, **do not connect this integration.**
-- No personal identifiers (your name, account, or email) are shared with
-  OpenStreetMap — only the installation's location, capacity, and source type.
+- **Your production readings** (kW with timestamp) are sent to Kilowattlas,
+  which stores 15-minute averages and keeps the raw readings only briefly. The
+  live value and history are shown **publicly** on the map at your
+  installation's location, without any personal identifier (no name, account
+  or e-mail).
+- **Your installation's position and capacity** are shown publicly on the map.
+  Home Assistant's home position is sent during linking as a suggestion only;
+  what is shown is the position you confirm on the website.
+- **The service is free for you; your data is sold on.** Kilowattlas sells the
+  shared production data to third parties. Electricity market participants use
+  it to make forecasts and steer other production so the power system runs more
+  efficiently. Service partners use it to see when an installation is not
+  performing as it should and to contact you about a fault. Your data is also
+  used to give you benchmarks of how your installation performs compared with
+  similar ones. This is the same kind of production data that your inverter
+  manufacturer's cloud most likely already collects and passes on.
 
 ## Stopping and removing
 
-There are two independent things — stopping the integration in Home Assistant,
-and deleting your data on Kilowattlas. Doing one does **not** do the other.
+Two independent things; do both for a full stop.
 
-**Remove the integration (Home Assistant side):**
-Settings → Devices & Services → *Kilowattlas – Trace the Sun* → ⋮ → **Delete**.
-This immediately:
+**Remove the integration** (Settings → Devices & services → Kilowattlas → ⋮ →
+Delete). This stops sending, removes the entities and local queue, and revokes
+the sharing token on Kilowattlas (best effort: if Home Assistant is offline at
+that moment, the token is disabled when you delete the installation on the
+website). It does **not** delete the history already stored.
 
-- stops sampling and pushing,
-- removes the sensors and the local offline buffer, and
-- **revokes the sharing token** on Kilowattlas, so no further data can be sent
-  (best-effort — if your Home Assistant is offline at removal, the token is
-  disabled the next time you delete the installation on the website).
-
-It does **not** delete the production history already stored on Kilowattlas —
-that remains until you delete the installation there (below).
-
-**Delete your data (Kilowattlas side):**
-Sign in on the Kilowattlas website and delete your installation. This:
-
-- stops accepting any further data and disables the sharing token, and
-- erases your production history.
-
-Your installation's static metadata (location, capacity) is **kept** — it was
-contributed to OpenStreetMap and stays on the map, consistent with the
-[OpenStreetMap copy](#privacy--data-sharing) which is public and permanent.
-
-> For a full stop, do both: delete the installation on the website, then remove
-> the integration in Home Assistant.
+**Delete your data**: sign in on kilowattlas.com and delete your installation.
+This disables the token and erases the production history, position and
+capacity.
 
 ## How it works
 
-- Listens for state changes on the chosen power sensor and forwards every
-  reading, with its original timestamp, to `POST /api/v1/contrib/solar`.
-  Readings arriving within about a second of each other go in one request.
-- Kilowattlas computes the 15-minute averages on the server; the integration
-  does no averaging of its own.
-- Readings that fail to send are kept in a queue that survives restarts and are
-  retried with backoff (10 s up to 5 min). The queue holds up to 5,000 readings,
-  about an hour at one reading per second; if it fills up, the oldest are
-  dropped first.
-- Slot size, retention and target sample rate are set by the server
-  and arrive with each response.
+- Subscribes to state changes of the chosen power sensor and forwards each
+  reading, with its original timestamp (microsecond precision), to
+  `POST /api/v1/contrib/solar`. A reading is sent as soon as it arrives;
+  readings that arrive while a request is in flight go in the next request.
+- Kilowattlas computes 15-minute averages on the server. The integration does
+  no averaging.
+- Readings that fail to send wait in a queue that survives restarts and are
+  retried with backoff (10 s up to 5 min). The queue holds 20,000 readings;
+  past that the oldest are dropped first.
+- Slot size, retention and the server's preferred sample rate arrive with each
+  response and are visible in the integration's diagnostics.
+
+API client: [aiokilowattlas](https://github.com/SmilingSweetSwede/aiokilowattlas)
+(MIT). This repository tracks the code submitted to Home Assistant core;
+`scripts/sync_to_core.sh` copies it into a core checkout.
+
+## Development
+
+```bash
+# Python 3.13 test harness in Docker (host has 3.12)
+docker run --rm -v "$PWD/.venv-docker:/venv" -v "$PWD:/repo" -w /repo python:3.13 \
+  bash -c "/venv/bin/pytest --cov=custom_components.kilowattlas"
+python3 scripts/build_translations.py   # regenerate translations/en.json from strings.json
+```

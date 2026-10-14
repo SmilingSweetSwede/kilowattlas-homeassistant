@@ -1,0 +1,21 @@
+{
+  "entity": {
+    "sensor": {
+      "shared_production": { "default": "mdi:white-balance-sunny" },
+      "sharing_status": {
+        "default": "mdi:solar-power",
+        "state": {
+          "connected": "mdi:cloud-check-outline",
+          "retrying": "mdi:cloud-sync-outline",
+          "revoked": "mdi:cloud-off-outline",
+          "starting": "mdi:cloud-clock-outline"
+        }
+      },
+      "last_sent": { "default": "mdi:clock-check-outline" },
+      "queued_readings": { "default": "mdi:tray-full" },
+      "last_batch_rejected": { "default": "mdi:alert-circle-outline" },
+      "measured_sample_interval": { "default": "mdi:timer-outline" },
+      "unusable_readings": { "default": "mdi:help-circle-outline" }
+    }
+  }
+}
