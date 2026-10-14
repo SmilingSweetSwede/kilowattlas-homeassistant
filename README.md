@@ -23,7 +23,7 @@ as soon as the connection is back, so nothing is lost.
 
 ## Install (via HACS)
 
-[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=SmilingSweetSwede&repository=kilowattlas-trace-the-sun&category=integration)
+[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=SmilingSweetSwede&repository=kilowattlas-homeassistant&category=integration)
 
 1. Click the button above, or add this repository manually in HACS
    (⋮ → **Custom repositories**, category **Integration**).

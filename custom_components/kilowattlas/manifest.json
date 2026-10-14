@@ -5,10 +5,10 @@
     "@SmilingSweetSwede"
   ],
   "config_flow": true,
-  "documentation": "https://github.com/SmilingSweetSwede/kilowattlas-trace-the-sun",
+  "documentation": "https://github.com/SmilingSweetSwede/kilowattlas-homeassistant",
   "integration_type": "service",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/SmilingSweetSwede/kilowattlas-trace-the-sun/issues",
+  "issue_tracker": "https://github.com/SmilingSweetSwede/kilowattlas-homeassistant/issues",
   "quality_scale": "bronze",
   "requirements": [
     "aiokilowattlas==0.1.0"
