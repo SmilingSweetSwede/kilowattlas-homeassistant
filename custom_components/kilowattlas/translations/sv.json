@@ -2,13 +2,13 @@
   "config": {
     "step": {
       "user": {
-        "title": "Dela din solelproduktion med Kilowattlas",
-        "description": "Kilowattlas bygger en publik, live-uppdaterad karta över solelproduktion av mätvärden som hushåll som ditt delar. Tjänsten är gratis för dig.\n\nInnan du fortsätter, det här händer:\n\n- Din hemposition i Home Assistant skickas till Kilowattlas som förslag på var din anläggning finns. Du kan justera den på webbplatsen innan du godkänner.\n- Anläggningens position, kapacitet och aktuella produktion visas publikt på kilowattlas.com. Inget namn, konto eller e-post visas.\n- Varje mätvärde från effektsensorn du väljer skickas så fort sensorn rapporterar det.\n- **Din data säljs vidare.** Kilowattlas säljer den delade produktionsdatan till tredje part: aktörer på elmarknaden använder den för att göra prognoser och styra annan produktion så att elsystemet blir effektivare, och servicepartner använder den för att se när en anläggning inte presterar som den ska, så att de kan kontakta dig om ett fel.\n- Din data används också för att ge dig riktvärden för hur din anläggning presterar jämfört med liknande anläggningar.\n- Du kan sluta när som helst: ta bort integrationen och radera sedan anläggningen på kilowattlas.com för att ta bort historiken.",
+        "title": "Dela din solelproduktion på Kilowattlas-kartan",
+        "description": "Kilowattlas är en gratis, publik, live-uppdaterad karta över solelproduktion byggd av mätvärden som hushåll som ditt delar. Integrationen är öppen källkod och skickar bara det som står här.\n\n**Vad som skickas och visas**\n\n- Din hemposition i Home Assistant skickas en gång, som förslag på var anläggningen finns. Du bekräftar eller justerar den på webbplatsen innan något visas.\n- Anläggningens position, kapacitet och aktuella produktion visas publikt på kilowattlas.com, utan ditt namn, konto eller e-post.\n- Varje mätvärde från effektsensorn du väljer skickas när sensorn rapporterar det. Inget annat från Home Assistant skickas.\n\n**Vad datan används till**\n\n- Den publika kartan och din egen produktionshistorik.\n- Jämförelse av hur din anläggning presterar mot liknande anläggningar.\n\nAll annan användning av din data, till exempel fellarm via en servicepartner eller aggregerad data för prognoser på elmarknaden, är ett separat val du gör på webbplatsen. Det slås aldrig på av den här integrationen.\n\nDu kan sluta när som helst: ta bort integrationen och radera sedan anläggningen på kilowattlas.com för att ta bort historiken.",
         "data": {
-          "consent": "Jag förstår och godkänner att anläggningens position, kapacitet och produktion delas publikt och säljs vidare enligt ovan"
+          "consent": "Jag godkänner att anläggningens position, kapacitet och aktuella produktion visas publikt på kilowattlas.com"
         },
         "data_description": {
-          "consent": "Krävs för att fortsätta."
+          "consent": "Krävs för att fortsätta. Gäller bara den publika kartan."
         }
       },
       "link": {
@@ -45,7 +45,7 @@
     },
     "error": {
       "cannot_connect": "Kunde inte ansluta",
-      "consent_required": "Du behöver godkänna innan integrationen kan dela din produktion."
+      "consent_required": "Du behöver godkänna den publika kartan innan integrationen kan dela din produktion."
     },
     "abort": {
       "already_configured": "Anläggningen är redan ansluten",

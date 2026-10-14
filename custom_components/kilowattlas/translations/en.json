@@ -2,13 +2,13 @@
   "config": {
     "step": {
       "user": {
-        "title": "Share your solar production with Kilowattlas",
-        "description": "Kilowattlas builds a public, live map of solar production from readings shared by homes like yours. The service is free for you.\n\nBefore you continue, this is what happens:\n\n- Your Home Assistant home position is sent to Kilowattlas as a suggestion for where your installation is. You can adjust it on the website before approving.\n- Your installation's position, capacity and live production are shown publicly on kilowattlas.com. No name, account or e-mail is shown.\n- Every reading from the power sensor you choose is sent as soon as your sensor reports it.\n- **Your data is sold on.** Kilowattlas sells the shared production data to third parties: electricity market participants use it to make forecasts and steer other production so the power system runs more efficiently, and service partners use it to see when an installation is not performing as it should, so they can contact you about a fault.\n- Your data is also used to give you benchmarks of how your installation performs compared with similar ones.\n- You can stop at any time: remove this integration, then delete the installation on kilowattlas.com to erase its history.",
+        "title": "Share your solar production on the Kilowattlas map",
+        "description": "Kilowattlas is a free, public, live map of solar production built from readings shared by homes like yours. This integration is open source and sends only what is listed here.\n\n**What is sent and shown**\n\n- Your Home Assistant home position is sent once, as a suggestion for where the installation is. You confirm or adjust it on the website before anything is shown.\n- The installation's position, capacity and live production are shown publicly on kilowattlas.com, without your name, account or e-mail.\n- Every reading from the power sensor you choose is sent as your sensor reports it. Nothing else from Home Assistant is sent.\n\n**What the data is used for**\n\n- The public map and your own production history.\n- Comparing how your installation performs against similar installations.\n\nAny other use of your data, for example fault alerts through a service partner or aggregated data for electricity-market forecasting, will be a separate choice you make on the website. It is never switched on by this integration.\n\nYou can stop at any time: remove this integration, then delete the installation on kilowattlas.com to erase its history.",
         "data": {
-          "consent": "I understand and agree that my installation's position, capacity and production are shared publicly and sold on as described"
+          "consent": "I agree that my installation's position, capacity and live production are shown publicly on kilowattlas.com"
         },
         "data_description": {
-          "consent": "Required to continue."
+          "consent": "Required to continue. Covers the public map only."
         }
       },
       "link": {
@@ -45,7 +45,7 @@
     },
     "error": {
       "cannot_connect": "Failed to connect",
-      "consent_required": "You need to agree before the integration can share your production."
+      "consent_required": "You need to agree to the public map before the integration can share your production."
     },
     "abort": {
       "already_configured": "Service is already configured",
