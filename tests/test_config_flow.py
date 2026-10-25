@@ -19,14 +19,19 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.kilowattlas.const import (
+    CONF_BATTERY_CHARGE_POSITIVE,
+    CONF_BATTERY_POWER_SENSOR,
+    CONF_BATTERY_SOC_SENSOR,
     CONF_CONSENT,
+    CONF_GRID_IMPORT_POSITIVE,
+    CONF_GRID_POWER_SENSOR,
     CONF_POWER_SENSOR,
     CONF_SITE_ID,
     CONF_TOKEN,
     DOMAIN,
 )
 
-from .conftest import SENSOR, SITE_ID, TOKEN
+from .conftest import BATTERY_SENSOR, GRID_SENSOR, SENSOR, SITE_ID, SOC_SENSOR, TOKEN
 
 pytestmark = pytest.mark.usefixtures("mock_client")
 
@@ -249,3 +254,104 @@ async def test_reconfigure(
     assert result["reason"] == "reconfigure_successful"
     assert mock_config_entry.data[CONF_POWER_SENSOR] == "sensor.other"
     assert mock_config_entry.data[CONF_TOKEN] == TOKEN
+
+
+async def test_full_flow_with_battery_and_grid(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """All four sensors and both sign flags are stored; flags only when set."""
+    result = await _consent(hass)
+    result = await _finish_progress(hass, result)
+    assert result["step_id"] == "sensor"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_POWER_SENSOR: SENSOR,
+            CONF_BATTERY_POWER_SENSOR: BATTERY_SENSOR,
+            CONF_GRID_POWER_SENSOR: GRID_SENSOR,
+            CONF_BATTERY_SOC_SENSOR: SOC_SENSOR,
+            CONF_BATTERY_CHARGE_POSITIVE: True,
+            CONF_GRID_IMPORT_POSITIVE: False,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        CONF_TOKEN: TOKEN,
+        CONF_SITE_ID: SITE_ID,
+        CONF_POWER_SENSOR: SENSOR,
+        CONF_BATTERY_POWER_SENSOR: BATTERY_SENSOR,
+        CONF_GRID_POWER_SENSOR: GRID_SENSOR,
+        CONF_BATTERY_SOC_SENSOR: SOC_SENSOR,
+        CONF_BATTERY_CHARGE_POSITIVE: True,
+    }
+
+
+async def test_sign_flag_without_its_sensor_is_dropped(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """A flag for a sensor that was not chosen means nothing and is not stored."""
+    result = await _consent(hass)
+    result = await _finish_progress(hass, result)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_POWER_SENSOR: SENSOR, CONF_GRID_IMPORT_POSITIVE: True},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        CONF_TOKEN: TOKEN,
+        CONF_SITE_ID: SITE_ID,
+        CONF_POWER_SENSOR: SENSOR,
+    }
+
+
+async def test_reconfigure_adds_battery(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """A production-only entry gains a battery channel."""
+    mock_config_entry.add_to_hass(hass)
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_POWER_SENSOR: SENSOR,
+            CONF_BATTERY_POWER_SENSOR: BATTERY_SENSOR,
+            CONF_BATTERY_SOC_SENSOR: SOC_SENSOR,
+        },
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_config_entry.data == {
+        CONF_TOKEN: TOKEN,
+        CONF_SITE_ID: SITE_ID,
+        CONF_POWER_SENSOR: SENSOR,
+        CONF_BATTERY_POWER_SENSOR: BATTERY_SENSOR,
+        CONF_BATTERY_SOC_SENSOR: SOC_SENSOR,
+    }
+
+
+async def test_reconfigure_removes_optional_sensors(
+    hass: HomeAssistant, mock_config_entry_full: MockConfigEntry
+) -> None:
+    """Clearing the optional sensors removes them and their sign flags."""
+    mock_config_entry_full.add_to_hass(hass)
+    result = await mock_config_entry_full.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    # The form is prefilled with what is shared today.
+    suggested = {
+        k.description["suggested_value"]
+        for k in result["data_schema"].schema
+        if isinstance(k.description, dict) and "suggested_value" in k.description
+    }
+    assert {SENSOR, BATTERY_SENSOR, GRID_SENSOR, SOC_SENSOR, True} <= suggested
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_POWER_SENSOR: SENSOR, CONF_GRID_POWER_SENSOR: GRID_SENSOR},
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_config_entry_full.data == {
+        CONF_TOKEN: TOKEN,
+        CONF_SITE_ID: SITE_ID,
+        CONF_POWER_SENSOR: SENSOR,
+        CONF_GRID_POWER_SENSOR: GRID_SENSOR,
+    }

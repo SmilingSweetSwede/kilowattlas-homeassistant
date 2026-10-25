@@ -28,10 +28,12 @@ from custom_components.kilowattlas.coordinator import (
     STORAGE_KEY,
     STORAGE_VERSION,
     KilowattlasStore,
+    rated_battery_kw,
     to_kw,
+    to_percent,
 )
 
-from .conftest import SENSOR, TOKEN
+from .conftest import BATTERY_SENSOR, GRID_SENSOR, SENSOR, SOC_SENSOR, TOKEN
 
 
 def _samples(mock_client: MagicMock) -> list[dict]:
@@ -72,6 +74,9 @@ async def test_reading_is_sent_immediately(
     assert sample["ts"].endswith("Z")
     assert len(sample["ts"]) == len("2026-10-14T10:00:00.000000Z")  # microseconds
     assert call.kwargs["donor"] == {"config_version": 1}
+    # Production only: the 0.1.0 wire format, no channel declarations.
+    assert call.kwargs["channels"] is None
+    assert "channel_key" not in sample
 
     assert hass.states.get("sensor.kilowattlas_shared_production").state == "3.5"
     assert hass.states.get("sensor.kilowattlas_queued_readings").state == "0"
@@ -350,3 +355,195 @@ async def test_rate_probe_measures_median_interval(
     donor = mock_client.ingest.await_args.kwargs["donor"]
     assert donor["sample_capability"] == "realtime_1s"
     assert donor["measured_sample_interval_seconds"] == 2.0
+
+
+@pytest.mark.parametrize(
+    ("value", "unit", "expected"),
+    [(64, "%", 64), (64, " % ", 64), (64, None, None), (64, "kW", None)],
+)
+def test_to_percent(value: float, unit: str | None, expected: float | None) -> None:
+    assert to_percent(value, unit) == expected
+
+
+@pytest.mark.parametrize(
+    ("attrs", "expected"),
+    [
+        ({"charge_peak_ac": 5.0, "discharge_peak_ac": 7.5}, 5.0),
+        ({"charge_peak_ac": "9", "discharge_peak_ac": 6.25}, 6.25),
+        ({"charge_peak_ac": 5.0}, None),
+        ({"charge_peak_ac": None, "discharge_peak_ac": 7.5}, None),
+        ({"charge_peak_ac": 0, "discharge_peak_ac": 7.5}, None),
+        ({}, None),
+    ],
+)
+def test_rated_battery_kw(attrs: dict, expected: float | None) -> None:
+    assert rated_battery_kw(attrs) == expected
+
+
+async def test_multi_channel_readings_are_tagged(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    init_integration_full: MockConfigEntry,
+    mock_client: MagicMock,
+) -> None:
+    """Each sensor goes to its own channel; signs follow Kilowattlas' convention."""
+    coordinator = init_integration_full.runtime_data
+    assert [c.channel_key for c in coordinator.channels] == [
+        "",
+        "battery",
+        "grid",
+        "battery_soc",
+    ]
+    assert coordinator.sensor == SENSOR
+    # Rated power picked up from the SoC sensor present at start.
+    assert coordinator.data.battery_power_kw == 5.0
+
+    mock_client.ingest.reset_mock()
+    freezer.tick(timedelta(seconds=1))
+    hass.states.async_set(SENSOR, "3210", {"unit_of_measurement": "W"})
+    freezer.tick(timedelta(seconds=1))
+    hass.states.async_set(BATTERY_SENSOR, "-1.5", {"unit_of_measurement": "kW"})
+    # Grid sensor reports import as positive: 0.9 kW import = -0.9 kW export.
+    freezer.tick(timedelta(seconds=1))
+    hass.states.async_set(GRID_SENSOR, "900", {"unit_of_measurement": "W"})
+    freezer.tick(timedelta(seconds=1))
+    hass.states.async_set(
+        SOC_SENSOR,
+        "64",
+        {"unit_of_measurement": "%", "charge_peak_ac": 5.0, "discharge_peak_ac": 7.5},
+    )
+    await hass.async_block_till_done()
+
+    sent = _samples(mock_client)
+    by_key = {s.get("channel_key"): s["power_kw"] for s in sent}
+    assert by_key == {None: 3.21, "battery": -1.5, "grid": -0.9, "battery_soc": 64.0}
+    assert len({s["ts"] for s in sent}) == 4  # one timestamp per sensor write
+    assert hass.states.get("sensor.kilowattlas_shared_production").state == "3.21"
+
+    # Every push declares the non-production channels by kind and carries
+    # the battery's rated power in the donor report.
+    call = mock_client.ingest.await_args
+    assert call.kwargs["channels"] == [
+        {"channel_key": "battery", "measurement_kind": "battery_power"},
+        {"channel_key": "grid", "measurement_kind": "net_export"},
+        {"channel_key": "battery_soc", "measurement_kind": "battery_soc"},
+    ]
+    assert call.kwargs["donor"] == {"config_version": 1, "battery_power_kw": 5.0}
+
+
+async def test_dedupe_is_per_entity(
+    hass: HomeAssistant,
+    init_integration_full: MockConfigEntry,
+    mock_client: MagicMock,
+) -> None:
+    """Two sensors written in the same instant are two readings, not one."""
+    coordinator = init_integration_full.runtime_data
+    mock_client.ingest.reset_mock()
+    hass.states.async_set(SENSOR, "1", {"unit_of_measurement": "kW"})
+    hass.states.async_set(BATTERY_SENSOR, "2", {"unit_of_measurement": "kW"})
+    await hass.async_block_till_done()
+    assert len(_samples(mock_client)) == 2
+    # A repeated event for the battery alone is still a repeat.
+    state = hass.states.get(BATTERY_SENSOR)
+    coordinator._on_state(
+        MagicMock(
+            data={"new_state": state, "old_state": state, "entity_id": BATTERY_SENSOR}
+        )
+    )
+    await hass.async_block_till_done()
+    assert len(_samples(mock_client)) == 2
+    # An event for an entity the coordinator does not share is ignored.
+    coordinator._on_state(
+        MagicMock(data={"new_state": state, "old_state": state, "entity_id": "sensor.x"})
+    )
+    await hass.async_block_till_done()
+    assert len(_samples(mock_client)) == 2
+
+
+async def test_soc_without_percent_unit_is_unusable(
+    hass: HomeAssistant,
+    init_integration_full: MockConfigEntry,
+    mock_client: MagicMock,
+) -> None:
+    """A state of charge is never normalised as a power; wrong unit = unusable."""
+    coordinator = init_integration_full.runtime_data
+    mock_client.ingest.reset_mock()
+    hass.states.async_set(SOC_SENSOR, "64", {"unit_of_measurement": "kW"})
+    hass.states.async_set(SOC_SENSOR, "unavailable")
+    await hass.async_block_till_done()
+    mock_client.ingest.assert_not_awaited()
+    assert coordinator.data.unusable == 2
+    # The production sensor's availability is untouched by the SoC sensor.
+    assert coordinator.data.source_available
+    assert hass.states.get("sensor.kilowattlas_shared_production").state == "4.2"
+
+
+async def test_battery_rating_refreshes_from_attributes(
+    hass: HomeAssistant,
+    init_integration_full: MockConfigEntry,
+    mock_client: MagicMock,
+) -> None:
+    """A changed rating on the SoC sensor reaches the next donor report."""
+    hass.states.async_set(
+        SOC_SENSOR,
+        "65",
+        {"unit_of_measurement": "%", "charge_peak_ac": 9.0, "discharge_peak_ac": 8.0},
+    )
+    await hass.async_block_till_done()
+    assert mock_client.ingest.await_args.kwargs["donor"]["battery_power_kw"] == 8.0
+    # Attributes gone: the last known rating is kept, not blanked.
+    hass.states.async_set(SOC_SENSOR, "66", {"unit_of_measurement": "%"})
+    await hass.async_block_till_done()
+    assert "battery_power_kw" not in mock_client.ingest.await_args.kwargs["donor"]
+    assert init_integration_full.runtime_data.data.battery_power_kw is None
+
+
+async def test_rate_probe_classifies_minute_source(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    init_integration_full: MockConfigEntry,
+    mock_client: MagicMock,
+) -> None:
+    """A cloud-polled sensor writing once a minute is batch_15min, not inconclusive.
+
+    Only the production sensor is timed: the battery writing in between must
+    not make the site look faster than its production feed is.
+    """
+    freezer.tick(timedelta(seconds=61))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    for i in range(4):
+        freezer.tick(timedelta(seconds=30))
+        hass.states.async_set(BATTERY_SENSOR, str(i), {"unit_of_measurement": "kW"})
+        freezer.tick(timedelta(seconds=30))
+        hass.states.async_set(SENSOR, str(1 + i), {"unit_of_measurement": "kW"})
+        await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=61))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert init_integration_full.runtime_data.data.measured_sample_interval_seconds == 60.0
+    hass.states.async_set(SENSOR, "9", {"unit_of_measurement": "kW"})
+    await hass.async_block_till_done()
+    donor = mock_client.ingest.await_args.kwargs["donor"]
+    assert donor["sample_capability"] == "batch_15min"
+    assert donor["measured_sample_interval_seconds"] == 60.0
+
+
+async def test_rate_probe_two_deltas_is_inconclusive(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+) -> None:
+    """Fewer than three deltas never concludes (a cloudy night must not downgrade)."""
+    freezer.tick(timedelta(seconds=61))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    for i in range(3):
+        freezer.tick(timedelta(seconds=90))
+        hass.states.async_set(SENSOR, str(1 + i), {"unit_of_measurement": "kW"})
+        await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=301))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert init_integration.runtime_data.data.measured_sample_interval_seconds is None

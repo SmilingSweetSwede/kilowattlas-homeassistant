@@ -4,9 +4,11 @@ Device-linking wizard:
   1. `user`   - explain what is shared and ask for consent.
   2. `link`   - show a code and a link; wait (with a progress indicator, not a
                 blocked dialog) until the user approves it on the website.
-  3. `sensor` - choose the power sensor to share.
+  3. `sensor` - choose the production sensor to share, and optionally a
+                battery power, grid power and battery state-of-charge sensor.
 
-Re-authentication reuses step 2; reconfiguration reuses step 3.
+Re-authentication reuses step 2; reconfiguration reuses step 3 (and can add or
+remove the optional sensors).
 """
 
 from __future__ import annotations
@@ -31,7 +33,18 @@ from homeassistant.config_entries import SOURCE_REAUTH, ConfigFlow, ConfigFlowRe
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import CONF_CONSENT, CONF_POWER_SENSOR, CONF_SITE_ID, CONF_TOKEN, DOMAIN
+from .const import (
+    CONF_BATTERY_CHARGE_POSITIVE,
+    CONF_BATTERY_POWER_SENSOR,
+    CONF_BATTERY_SOC_SENSOR,
+    CONF_CONSENT,
+    CONF_GRID_IMPORT_POSITIVE,
+    CONF_GRID_POWER_SENSOR,
+    CONF_POWER_SENSOR,
+    CONF_SITE_ID,
+    CONF_TOKEN,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,13 +55,59 @@ MAX_POLL_INTERVAL = 30
 MIN_DEADLINE = 30
 MAX_DEADLINE = 900
 
+_POWER_SENSOR = selector.EntitySelector(
+    selector.EntitySelectorConfig(domain="sensor", device_class="power")
+)
+_SOC_SENSOR = selector.EntitySelector(
+    selector.EntitySelectorConfig(domain="sensor", device_class="battery")
+)
+
 SENSOR_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_POWER_SENSOR): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor", device_class="power")
-        )
+        vol.Required(CONF_POWER_SENSOR): _POWER_SENSOR,
+        vol.Optional(CONF_BATTERY_POWER_SENSOR): _POWER_SENSOR,
+        vol.Optional(CONF_GRID_POWER_SENSOR): _POWER_SENSOR,
+        vol.Optional(CONF_BATTERY_SOC_SENSOR): _SOC_SENSOR,
+        vol.Optional(
+            CONF_BATTERY_CHARGE_POSITIVE, default=False
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_GRID_IMPORT_POSITIVE, default=False
+        ): selector.BooleanSelector(),
     }
 )
+
+# Everything the sensor form decides. Reconfigure replaces exactly this set, so
+# an optional sensor the user cleared is really gone.
+SENSOR_KEYS = (
+    CONF_POWER_SENSOR,
+    CONF_BATTERY_POWER_SENSOR,
+    CONF_GRID_POWER_SENSOR,
+    CONF_BATTERY_SOC_SENSOR,
+    CONF_BATTERY_CHARGE_POSITIVE,
+    CONF_GRID_IMPORT_POSITIVE,
+)
+
+
+def sensor_data(user_input: Mapping[str, Any]) -> dict[str, Any]:
+    """Entry data for the sensor form: optional keys only when chosen.
+
+    A production-only answer yields exactly the 0.4.0 shape, and a sign flag is
+    stored only when set, so "not chosen" and "pre-0.5.0 entry" are the same.
+    """
+    out: dict[str, Any] = {CONF_POWER_SENSOR: user_input[CONF_POWER_SENSOR]}
+    for key in (
+        CONF_BATTERY_POWER_SENSOR,
+        CONF_GRID_POWER_SENSOR,
+        CONF_BATTERY_SOC_SENSOR,
+    ):
+        if user_input.get(key):
+            out[key] = user_input[key]
+    if user_input.get(CONF_BATTERY_CHARGE_POSITIVE) and CONF_BATTERY_POWER_SENSOR in out:
+        out[CONF_BATTERY_CHARGE_POSITIVE] = True
+    if user_input.get(CONF_GRID_IMPORT_POSITIVE) and CONF_GRID_POWER_SENSOR in out:
+        out[CONF_GRID_IMPORT_POSITIVE] = True
+    return out
 
 
 class KilowattlasConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -190,7 +249,7 @@ class KilowattlasConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_sensor(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Pick the power sensor to share."""
+        """Pick the sensors to share."""
         if user_input is not None:
             assert self._grant is not None  # noqa: S101
             return self.async_create_entry(
@@ -198,7 +257,7 @@ class KilowattlasConfigFlow(ConfigFlow, domain=DOMAIN):
                 data={
                     CONF_TOKEN: self._grant.token,
                     CONF_SITE_ID: self._grant.site_id,
-                    CONF_POWER_SENSOR: user_input[CONF_POWER_SENSOR],
+                    **sensor_data(user_input),
                 },
             )
         return self.async_show_form(step_id="sensor", data_schema=SENSOR_SCHEMA)
@@ -224,15 +283,21 @@ class KilowattlasConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Change the shared power sensor without re-linking."""
+        """Change the shared sensors without re-linking.
+
+        The whole sensor block is replaced rather than merged: an optional
+        sensor left empty in the form must stop being shared, which a merge of
+        "keys present in the answer" could never express.
+        """
         entry = self._get_reconfigure_entry()
         if user_input is not None:
+            kept = {k: v for k, v in entry.data.items() if k not in SENSOR_KEYS}
             return self.async_update_reload_and_abort(
-                entry, data_updates={CONF_POWER_SENSOR: user_input[CONF_POWER_SENSOR]}
+                entry, data={**kept, **sensor_data(user_input)}
             )
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(
-                SENSOR_SCHEMA, {CONF_POWER_SENSOR: entry.data.get(CONF_POWER_SENSOR)}
+                SENSOR_SCHEMA, {k: entry.data.get(k) for k in SENSOR_KEYS}
             ),
         )

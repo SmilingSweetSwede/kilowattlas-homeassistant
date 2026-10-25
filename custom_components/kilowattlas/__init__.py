@@ -15,8 +15,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import CONF_POWER_SENSOR, CONF_SITE_ID, CONF_TOKEN
-from .coordinator import KilowattlasConfigEntry, KilowattlasCoordinator
+from .const import CONF_SITE_ID, CONF_TOKEN
+from .coordinator import (
+    KilowattlasConfigEntry,
+    KilowattlasCoordinator,
+    channel_specs_from_entry,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: KilowattlasConfigEntry) 
         client,
         token,
         site_id=int(entry.data.get(CONF_SITE_ID) or site.site_id),
-        sensor=entry.data[CONF_POWER_SENSOR],
+        channels=channel_specs_from_entry(entry.data),
         initial_config=site.config,
     )
     await coordinator.async_start()

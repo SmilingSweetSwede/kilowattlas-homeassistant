@@ -3,9 +3,9 @@
     "step": {
       "user": {
         "title": "Dela din solelproduktion på Kilowattlas-kartan",
-        "description": "Kilowattlas är en gratis, publik, live-uppdaterad karta över solelproduktion byggd av mätvärden som hushåll som ditt delar. Integrationen är öppen källkod och skickar bara det som står här.\n\n**Vad som skickas och visas**\n\n- Din hemposition i Home Assistant skickas en gång, som förslag på var anläggningen finns. Du bekräftar eller justerar den på webbplatsen innan något visas.\n- Anläggningens position, kapacitet och aktuella produktion visas publikt på kilowattlas.com, utan ditt namn, konto eller e-post.\n- Varje mätvärde från effektsensorn du väljer skickas när sensorn rapporterar det. Inget annat från Home Assistant skickas.\n\n**Vad datan används till**\n\n- Den publika kartan och din egen produktionshistorik.\n- Jämförelse av hur din anläggning presterar mot liknande anläggningar.\n\nAll annan användning av din data, till exempel fellarm via en servicepartner eller aggregerad data för prognoser på elmarknaden, är ett separat val du gör på webbplatsen. Det slås aldrig på av den här integrationen.\n\nDu kan sluta när som helst: ta bort integrationen och radera sedan anläggningen på kilowattlas.com för att ta bort historiken.",
+        "description": "Kilowattlas är en gratis, publik, live-uppdaterad karta över solelproduktion byggd av mätvärden som hushåll som ditt delar. Integrationen är öppen källkod och skickar bara det som står här.\n\n**Vad som skickas och visas**\n\n- Din hemposition i Home Assistant skickas en gång, som förslag på var anläggningen finns. Du bekräftar eller justerar den på webbplatsen innan något visas.\n- Anläggningens position, kapacitet och aktuella produktion visas publikt på kilowattlas.com, utan ditt namn, konto eller e-post.\n- Varje mätvärde från effektsensorn du väljer skickas när sensorn rapporterar det. Väljer du även en sensor för batterieffekt, näteffekt eller batteriets laddnivå skickas deras mätvärden på samma sätt och visas tillsammans med din anläggning. Inget annat från Home Assistant skickas.\n\n**Vad datan används till**\n\n- Den publika kartan och din egen produktionshistorik.\n- Jämförelse av hur din anläggning presterar mot liknande anläggningar.\n\nAll annan användning av din data, till exempel fellarm via en servicepartner eller aggregerad data för prognoser på elmarknaden, är ett separat val du gör på webbplatsen. Det slås aldrig på av den här integrationen.\n\nDu kan sluta när som helst: ta bort integrationen och radera sedan anläggningen på kilowattlas.com för att ta bort historiken.",
         "data": {
-          "consent": "Jag godkänner att anläggningens position, kapacitet och aktuella produktion visas publikt på kilowattlas.com"
+          "consent": "Jag godkänner att anläggningens position, kapacitet, aktuella produktion och, om jag väljer att dela dem, batteri- och nätflöde visas publikt på kilowattlas.com"
         },
         "data_description": {
           "consent": "Krävs för att fortsätta. Gäller bara den publika kartan."
@@ -16,13 +16,23 @@
         "description": "Öppna sidan, logga in och godkänn kopplingen:\n\n{verification_uri}\n\nDin kod: **{user_code}**\n\nDialogen fortsätter automatiskt när du har godkänt."
       },
       "sensor": {
-        "title": "Välj din solcellssensor",
-        "description": "Välj den effektsensor som visar din solelproduktion (i W, kW eller MW).",
+        "title": "Välj dina sensorer",
+        "description": "Välj den effektsensor som visar din solelproduktion (i W, kW eller MW). Batteri- och nätsensor är valfria: lämna dem tomma för att bara dela produktion.",
         "data": {
-          "power_sensor": "Solcellseffekt-sensor"
+          "power_sensor": "Solcellseffekt-sensor",
+          "battery_power_sensor": "Batterieffekt-sensor (valfri)",
+          "grid_power_sensor": "Näteffekt-sensor (valfri)",
+          "battery_soc_sensor": "Batteriets laddnivå (valfri)",
+          "battery_charge_positive": "Batterisensorn visar laddning som positivt",
+          "grid_import_positive": "Nätsensorn visar import som positivt"
         },
         "data_description": {
-          "power_sensor": "Välj växelriktarens eller mätarens produktionssensor, inte hushållets förbrukning."
+          "power_sensor": "Välj växelriktarens eller mätarens produktionssensor, inte hushållets förbrukning.",
+          "battery_power_sensor": "Effekt in i eller ut ur hemmabatteriet. Kilowattlas räknar urladdning (effekt ut ur batteriet) som positivt; kryssa i rutan nedan om din sensor gör tvärtom.",
+          "grid_power_sensor": "Effekt vid din nätanslutning (P1/HAN-mätare eller energisystem). Kilowattlas räknar export som positivt; kryssa i rutan nedan om din sensor gör tvärtom.",
+          "battery_soc_sensor": "Batteriets laddnivå i procent. Batteriets märkeffekt läses från sensorns attribut när den finns.",
+          "battery_charge_positive": "Lämna av om positiva värden betyder att batteriet laddas ur.",
+          "grid_import_positive": "Lämna av om positiva värden betyder att du exporterar till nätet."
         }
       },
       "reauth_confirm": {
@@ -30,13 +40,23 @@
         "description": "Kilowattlas accepterar inte längre kopplingen för den här anläggningen. Godkänn en ny koppling på webbplatsen för att fortsätta dela."
       },
       "reconfigure": {
-        "title": "Byt solcellssensor",
-        "description": "Välj effektsensorn som ska delas. Mätvärden som redan är köade behålls.",
+        "title": "Ändra delade sensorer",
+        "description": "Välj sensorerna som ska delas. Töm en valfri sensor för att sluta dela den. Mätvärden som redan är köade behålls.",
         "data": {
-          "power_sensor": "Solcellseffekt-sensor"
+          "power_sensor": "Solcellseffekt-sensor",
+          "battery_power_sensor": "Batterieffekt-sensor (valfri)",
+          "grid_power_sensor": "Näteffekt-sensor (valfri)",
+          "battery_soc_sensor": "Batteriets laddnivå (valfri)",
+          "battery_charge_positive": "Batterisensorn visar laddning som positivt",
+          "grid_import_positive": "Nätsensorn visar import som positivt"
         },
         "data_description": {
-          "power_sensor": "Välj växelriktarens eller mätarens produktionssensor, inte hushållets förbrukning."
+          "power_sensor": "Välj växelriktarens eller mätarens produktionssensor, inte hushållets förbrukning.",
+          "battery_power_sensor": "Effekt in i eller ut ur hemmabatteriet. Kilowattlas räknar urladdning (effekt ut ur batteriet) som positivt; kryssa i rutan nedan om din sensor gör tvärtom.",
+          "grid_power_sensor": "Effekt vid din nätanslutning (P1/HAN-mätare eller energisystem). Kilowattlas räknar export som positivt; kryssa i rutan nedan om din sensor gör tvärtom.",
+          "battery_soc_sensor": "Batteriets laddnivå i procent. Batteriets märkeffekt läses från sensorns attribut när den finns.",
+          "battery_charge_positive": "Lämna av om positiva värden betyder att batteriet laddas ur.",
+          "grid_import_positive": "Lämna av om positiva värden betyder att du exporterar till nätet."
         }
       }
     },

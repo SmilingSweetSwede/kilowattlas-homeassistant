@@ -3,9 +3,9 @@
     "step": {
       "user": {
         "title": "Share your solar production on the Kilowattlas map",
-        "description": "Kilowattlas is a free, public, live map of solar production built from readings shared by homes like yours. This integration is open source and sends only what is listed here.\n\n**What is sent and shown**\n\n- Your Home Assistant home position is sent once, as a suggestion for where the installation is. You confirm or adjust it on the website before anything is shown.\n- The installation's position, capacity and live production are shown publicly on kilowattlas.com, without your name, account or e-mail.\n- Every reading from the power sensor you choose is sent as your sensor reports it. Nothing else from Home Assistant is sent.\n\n**What the data is used for**\n\n- The public map and your own production history.\n- Comparing how your installation performs against similar installations.\n\nAny other use of your data, for example fault alerts through a service partner or aggregated data for electricity-market forecasting, will be a separate choice you make on the website. It is never switched on by this integration.\n\nYou can stop at any time: remove this integration, then delete the installation on kilowattlas.com to erase its history.",
+        "description": "Kilowattlas is a free, public, live map of solar production built from readings shared by homes like yours. This integration is open source and sends only what is listed here.\n\n**What is sent and shown**\n\n- Your Home Assistant home position is sent once, as a suggestion for where the installation is. You confirm or adjust it on the website before anything is shown.\n- The installation's position, capacity and live production are shown publicly on kilowattlas.com, without your name, account or e-mail.\n- Every reading from the power sensor you choose is sent as your sensor reports it. If you also choose a battery power, grid power or battery state-of-charge sensor, their readings are sent the same way and shown with your installation. Nothing else from Home Assistant is sent.\n\n**What the data is used for**\n\n- The public map and your own production history.\n- Comparing how your installation performs against similar installations.\n\nAny other use of your data, for example fault alerts through a service partner or aggregated data for electricity-market forecasting, will be a separate choice you make on the website. It is never switched on by this integration.\n\nYou can stop at any time: remove this integration, then delete the installation on kilowattlas.com to erase its history.",
         "data": {
-          "consent": "I agree that my installation's position, capacity and live production are shown publicly on kilowattlas.com"
+          "consent": "I agree that my installation's position, capacity, live production and, if I choose to share them, battery and grid flow are shown publicly on kilowattlas.com"
         },
         "data_description": {
           "consent": "Required to continue. Covers the public map only."
@@ -16,13 +16,23 @@
         "description": "Open this page, sign in and approve the link:\n\n{verification_uri}\n\nYour code: **{user_code}**\n\nThis dialog continues automatically once you have approved it."
       },
       "sensor": {
-        "title": "Choose your solar sensor",
-        "description": "Select the power sensor that reports your solar production (in W, kW or MW).",
+        "title": "Choose your sensors",
+        "description": "Select the power sensor that reports your solar production (in W, kW or MW). A battery or grid sensor is optional: leave it empty to share production only.",
         "data": {
-          "power_sensor": "Solar power sensor"
+          "power_sensor": "Solar power sensor",
+          "battery_power_sensor": "Battery power sensor (optional)",
+          "grid_power_sensor": "Grid power sensor (optional)",
+          "battery_soc_sensor": "Battery state of charge (optional)",
+          "battery_charge_positive": "Battery sensor shows charging as positive",
+          "grid_import_positive": "Grid sensor shows import as positive"
         },
         "data_description": {
-          "power_sensor": "Pick the inverter or meter sensor that reports production, not household consumption."
+          "power_sensor": "Pick the inverter or meter sensor that reports production, not household consumption.",
+          "battery_power_sensor": "Power into or out of your home battery. Kilowattlas counts discharge (power out of the battery) as positive; tick the box below if your sensor does the opposite.",
+          "grid_power_sensor": "Power at your grid connection (P1/HAN meter or energy system). Kilowattlas counts export as positive; tick the box below if your sensor does the opposite.",
+          "battery_soc_sensor": "Your battery's state of charge in percent. Its rated power is read from the sensor's attributes when available.",
+          "battery_charge_positive": "Leave off if positive values mean the battery is discharging.",
+          "grid_import_positive": "Leave off if positive values mean you are exporting to the grid."
         }
       },
       "reauth_confirm": {
@@ -30,13 +40,23 @@
         "description": "Kilowattlas no longer accepts the link for this installation. Approve a new link on the website to continue sharing."
       },
       "reconfigure": {
-        "title": "Change the solar sensor",
-        "description": "Choose the power sensor to share. Readings already queued are kept.",
+        "title": "Change the shared sensors",
+        "description": "Choose the sensors to share. Clear an optional sensor to stop sharing it. Readings already queued are kept.",
         "data": {
-          "power_sensor": "[%key:component::kilowattlas::config::step::sensor::data::power_sensor%]"
+          "power_sensor": "[%key:component::kilowattlas::config::step::sensor::data::power_sensor%]",
+          "battery_power_sensor": "[%key:component::kilowattlas::config::step::sensor::data::battery_power_sensor%]",
+          "grid_power_sensor": "[%key:component::kilowattlas::config::step::sensor::data::grid_power_sensor%]",
+          "battery_soc_sensor": "[%key:component::kilowattlas::config::step::sensor::data::battery_soc_sensor%]",
+          "battery_charge_positive": "[%key:component::kilowattlas::config::step::sensor::data::battery_charge_positive%]",
+          "grid_import_positive": "[%key:component::kilowattlas::config::step::sensor::data::grid_import_positive%]"
         },
         "data_description": {
-          "power_sensor": "[%key:component::kilowattlas::config::step::sensor::data_description::power_sensor%]"
+          "power_sensor": "[%key:component::kilowattlas::config::step::sensor::data_description::power_sensor%]",
+          "battery_power_sensor": "[%key:component::kilowattlas::config::step::sensor::data_description::battery_power_sensor%]",
+          "grid_power_sensor": "[%key:component::kilowattlas::config::step::sensor::data_description::grid_power_sensor%]",
+          "battery_soc_sensor": "[%key:component::kilowattlas::config::step::sensor::data_description::battery_soc_sensor%]",
+          "battery_charge_positive": "[%key:component::kilowattlas::config::step::sensor::data_description::battery_charge_positive%]",
+          "grid_import_positive": "[%key:component::kilowattlas::config::step::sensor::data_description::grid_import_positive%]"
         }
       }
     },

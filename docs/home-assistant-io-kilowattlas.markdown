@@ -22,12 +22,13 @@ The **Kilowattlas** {% term integration %} shares your rooftop solar production 
 
 - A Kilowattlas account. Sign in at [kilowattlas.com](https://kilowattlas.com).
 - A {% term sensor %} with device class `power` that reports your solar production in W, kW or MW, for example from your inverter or a production meter.
+- Optionally, power sensors for your home battery and your grid connection, and a sensor with device class `battery` for the battery's state of charge. These are shared as separate channels and are never counted as production.
 
 The service is free and the integration is open source. During setup you are asked to agree that your installation's position, capacity and live production are shown publicly on the Kilowattlas map, without any personal identifier (name, account, e-mail). Home Assistant's home position is sent once as a suggestion for where the installation is; you confirm or adjust it on the website before approving the link. Beyond the map, shared data is only used to compare your installation with similar ones. Any further use is a separate choice made on the website, never by this integration.
 
 {% include integrations/config_flow.md %}
 
-The setup links Home Assistant to your Kilowattlas account with a short code: Home Assistant shows the code and a link, you sign in on the website and approve, and the setup continues by itself. Then choose the power sensor to share.
+The setup links Home Assistant to your Kilowattlas account with a short code: Home Assistant shows the code and a link, you sign in on the website and approve, and the setup continues by itself. Then choose the power sensor to share, and optionally a battery power, grid power and battery state-of-charge sensor. Kilowattlas counts grid export and battery discharge as positive; if your sensors report the opposite sign, tick the matching option.
 
 ## Data updates
 
@@ -52,7 +53,7 @@ The device's **Visit** link opens the Kilowattlas map centred on your home.
 
 ## Reconfiguration
 
-To change the shared sensor, open the integration and select **Reconfigure**. The link to your Kilowattlas account is kept.
+To change the shared sensors, open the integration and select **Reconfigure**. Clearing an optional sensor stops sharing it. The link to your Kilowattlas account is kept.
 
 If Kilowattlas stops accepting the link (for example after you deleted the installation on the website), Home Assistant asks you to re-authenticate, which approves a new link in the same way as the initial setup.
 

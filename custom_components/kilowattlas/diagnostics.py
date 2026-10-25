@@ -22,6 +22,7 @@ async def async_get_config_entry_diagnostics(
     return {
         "entry": async_redact_data(dict(entry.data), TO_REDACT),
         "state": asdict(coordinator.data),
+        "channels": [asdict(spec) for spec in coordinator.channels],
         "server_config": coordinator.server_config,
         "queue_length": coordinator.queue_length,
         "legacy_queue_length": coordinator.legacy_queue_length,

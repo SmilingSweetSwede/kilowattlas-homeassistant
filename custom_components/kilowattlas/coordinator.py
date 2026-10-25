@@ -1,9 +1,15 @@
-"""Capture every reading of a power sensor and forward it to Kilowattlas at once.
+"""Capture every reading of the chosen sensors and forward them to Kilowattlas.
 
-The source (inverter or meter) sets the pace. Whenever its Home Assistant sensor
-writes a value, that value is sent, at whatever rate the sensor delivers:
-several times a second, once a second, once a minute. Nothing here samples,
-thins or averages. The server stages raw readings and computes slot means.
+The source (inverter, meter, battery system) sets the pace. Whenever one of the
+Home Assistant sensors writes a value, that value is sent, at whatever rate the
+sensor delivers: several times a second, once a second, once a minute. Nothing
+here samples, thins or averages. The server stages raw readings and computes
+slot means.
+
+One entry shares up to four sensors, each as its own server-side channel:
+production (always), and optionally battery power, grid power and battery state
+of charge. Battery and grid readings are tagged by channel and declared by
+kind, so the server never counts them as production.
 
 What the coordinator adds is durability. A reading that cannot be sent (network
 down, server down) waits in a persisted queue and goes out on the next
@@ -15,6 +21,7 @@ not be sent the moment they arrived.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from statistics import median
@@ -22,6 +29,10 @@ from typing import Any
 
 from aiokilowattlas import (
     DEFAULT_CONFIG,
+    KIND_BATTERY_POWER,
+    KIND_BATTERY_SOC,
+    KIND_GROSS_PRODUCTION,
+    KIND_NET_EXPORT,
     KilowattlasAuthError,
     KilowattlasClient,
     KilowattlasError,
@@ -46,6 +57,18 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    ATTR_CHARGE_PEAK_AC,
+    ATTR_DISCHARGE_PEAK_AC,
+    CHANNEL_BATTERY,
+    CHANNEL_BATTERY_SOC,
+    CHANNEL_GRID,
+    CHANNEL_PRODUCTION,
+    CONF_BATTERY_CHARGE_POSITIVE,
+    CONF_BATTERY_POWER_SENSOR,
+    CONF_BATTERY_SOC_SENSOR,
+    CONF_GRID_IMPORT_POSITIVE,
+    CONF_GRID_POWER_SENSOR,
+    CONF_POWER_SENSOR,
     DOMAIN,
     STATUS_CONNECTED,
     STATUS_RETRYING,
@@ -59,12 +82,17 @@ _LOGGER = logging.getLogger(__name__)
 
 type KilowattlasConfigEntry = ConfigEntry[KilowattlasCoordinator]
 
-# Rate probe. A passive subscription that measures how often the sensor really
-# updates, so the server can tell a donor that CAN deliver 1 s data from one
-# that merely said so. Never asks any integration to fetch.
+# Rate probe. A passive subscription that measures how often the PRODUCTION
+# sensor really updates, so the server can tell a donor that CAN deliver 1 s
+# data from one that merely said so. Never asks any integration to fetch.
+#
+# Three deltas, not five: a cloud-polled source that writes once a minute (the
+# CheckWatt integration) produces four or five events in a 300 s window, i.e.
+# three or four deltas, and must be classified as batch_15min rather than left
+# inconclusive forever. The median still shrugs off one odd gap.
 PROBE_WINDOW_SECONDS = 300
 PROBE_STARTUP_DELAY_SECONDS = 60  # let HA's boot burst settle first
-PROBE_MIN_DELTAS = 5
+PROBE_MIN_DELTAS = 3
 
 # Retry queue bounds. Roughly an hour at a few readings per second; past that the
 # OLDEST are dropped, since the server cannot use samples older than its
@@ -84,6 +112,56 @@ UNAVAILABLE_STATES = {None, "", "unknown", "unavailable"}
 
 
 @dataclass(frozen=True, slots=True)
+class ChannelSpec:
+    """One Home Assistant sensor shared as one Kilowattlas channel."""
+
+    entity_id: str
+    channel_key: str  # "" = the server's default channel (production)
+    kind: str  # measurement kind the server files the channel under
+    invert: bool = False  # the sensor's sign is opposite to Kilowattlas'
+    percent: bool = False  # a state of charge in %, not a power
+
+
+def channel_specs_from_entry(data: Mapping[str, Any]) -> list[ChannelSpec]:
+    """Translate config entry data into channels. Production first, always."""
+    specs = [
+        ChannelSpec(
+            entity_id=data[CONF_POWER_SENSOR],
+            channel_key=CHANNEL_PRODUCTION,
+            kind=KIND_GROSS_PRODUCTION,
+        )
+    ]
+    if battery := data.get(CONF_BATTERY_POWER_SENSOR):
+        specs.append(
+            ChannelSpec(
+                entity_id=battery,
+                channel_key=CHANNEL_BATTERY,
+                kind=KIND_BATTERY_POWER,
+                invert=bool(data.get(CONF_BATTERY_CHARGE_POSITIVE)),
+            )
+        )
+    if grid := data.get(CONF_GRID_POWER_SENSOR):
+        specs.append(
+            ChannelSpec(
+                entity_id=grid,
+                channel_key=CHANNEL_GRID,
+                kind=KIND_NET_EXPORT,
+                invert=bool(data.get(CONF_GRID_IMPORT_POSITIVE)),
+            )
+        )
+    if soc := data.get(CONF_BATTERY_SOC_SENSOR):
+        specs.append(
+            ChannelSpec(
+                entity_id=soc,
+                channel_key=CHANNEL_BATTERY_SOC,
+                kind=KIND_BATTERY_SOC,
+                percent=True,
+            )
+        )
+    return specs
+
+
+@dataclass(frozen=True, slots=True)
 class KilowattlasData:
     """Snapshot the entities render."""
 
@@ -99,6 +177,7 @@ class KilowattlasData:
     slot_seconds: int
     raw_sample_interval_seconds: int
     config_version: int
+    battery_power_kw: float | None = None
 
 
 class KilowattlasStore(Store[dict[str, Any]]):
@@ -144,6 +223,29 @@ class KilowattlasStore(Store[dict[str, Any]]):
         }
 
 
+def to_percent(value: float, unit: str | None) -> float | None:
+    """A state of charge must say it is a percentage; anything else is unusable."""
+    if unit is not None and unit.strip() == "%":
+        return value
+    return None
+
+
+def rated_battery_kw(attributes: Mapping[str, Any]) -> float | None:
+    """The battery's rated power: the smaller of its charge and discharge peaks.
+
+    CheckWatt publishes both as attributes of its SoC sensor, in kW. Either
+    missing or non-numeric means we do not know, not zero.
+    """
+    try:
+        charge = float(attributes[ATTR_CHARGE_PEAK_AC])
+        discharge = float(attributes[ATTR_DISCHARGE_PEAK_AC])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if charge <= 0 or discharge <= 0:
+        return None
+    return round(min(charge, discharge), 3)
+
+
 def to_kw(value: float, unit: str | None) -> float | None:
     """Normalise a power reading to kW. None for a unit we cannot interpret."""
     if unit is None:
@@ -171,7 +273,7 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
         token: str,
         *,
         site_id: int,
-        sensor: str,
+        channels: list[ChannelSpec],
         initial_config: dict[str, Any] | None = None,
     ) -> None:
         """Initialise. Push-based, so no update interval."""
@@ -181,7 +283,17 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
         self._client = client
         self._token = token
         self.site_id = site_id
-        self.sensor = sensor
+        self.channels = list(channels)
+        self._specs: dict[str, ChannelSpec] = {c.entity_id: c for c in channels}
+        # The production sensor: the one the entities show and the probe times.
+        self.sensor = channels[0].entity_id
+        # What the server is told about channels it may not have yet. Sent with
+        # every push (a few bytes); the server applies it only on creation.
+        self._channel_decls: list[dict[str, Any]] = [
+            {"channel_key": c.channel_key, "measurement_kind": c.kind}
+            for c in channels
+            if c.channel_key
+        ]
         self._store = KilowattlasStore(
             hass, STORAGE_VERSION, f"{STORAGE_KEY}_{entry.entry_id}"
         )
@@ -207,12 +319,14 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
         self._source_available = False
         self._unusable = 0
         self._measured_interval: float | None = None
+        self._battery_power_kw: float | None = None
         self._probe_running = False
         self._probe_seen: list[datetime] = []
         self._probe_values: list[float] = []
         # HA fires a state event on attribute-only changes too; this is what
-        # keeps the same reading from being forwarded twice.
-        self._last_ts: datetime | None = None
+        # keeps the same reading from being forwarded twice. Per entity: the
+        # sensors write independently of each other.
+        self._last_ts: dict[str, datetime] = {}
 
     # --- read-only views ------------------------------------------------------
 
@@ -247,6 +361,7 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
                 self._config.get("raw_sample_interval_seconds", 10)
             ),
             config_version=int(self._config["config_version"]),
+            battery_power_kw=self._battery_power_kw,
         )
 
     @callback
@@ -271,13 +386,22 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
         ]
         self._measured_interval = stored.get("measured_sample_interval_seconds")
 
-        # Show the sensor's current value right away, but do not send it: it
-        # predates this start and the next write will arrive on its own.
-        current = self.hass.states.get(self.sensor)
-        self._source_available = (
-            current is not None and current.state not in UNAVAILABLE_STATES
-        )
-        if current is not None and self._source_available:
+        # Show the production sensor's current value right away, but do not
+        # send it: it predates this start and the next write will arrive on its
+        # own. The same goes for every other channel: remember where each one
+        # is so the first event after start is not mistaken for new data.
+        for spec in self.channels:
+            current = self.hass.states.get(spec.entity_id)
+            if current is None:
+                continue
+            self._last_ts[spec.entity_id] = current.last_updated
+            if spec.percent:
+                self._battery_power_kw = rated_battery_kw(current.attributes)
+            if spec.channel_key != CHANNEL_PRODUCTION:
+                continue
+            self._source_available = current.state not in UNAVAILABLE_STATES
+            if not self._source_available:
+                continue
             try:
                 kw = to_kw(
                     float(current.state), current.attributes.get("unit_of_measurement")
@@ -286,12 +410,11 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
                 kw = None
             if kw is not None:
                 self._current_kw = round(kw, 3)
-            self._last_ts = current.last_updated
 
         # Event-driven, not polled: a timer can only observe at the rate it
-        # ticks. Subscribing delivers every value the source writes.
+        # ticks. Subscribing delivers every value the sources write.
         self._unsub_state = async_track_state_change_event(
-            self.hass, [self.sensor], self._on_state
+            self.hass, list(self._specs), self._on_state
         )
         self._unsub_probe = async_call_later(
             self.hass, PROBE_STARTUP_DELAY_SECONDS, self._start_probe
@@ -342,46 +465,62 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
     @callback
     def _on_state(self, event: Event[EventStateChangedData]) -> None:
         """Queue a reading and send it right away."""
+        spec = self._specs.get(event.data["entity_id"])
+        if spec is None:
+            return
+        is_production = spec.channel_key == CHANNEL_PRODUCTION
         state = event.data["new_state"]
         if state is None or state.state in UNAVAILABLE_STATES:
-            self._source_available = False
+            if is_production:
+                self._source_available = False
             self._unusable += 1
             self._publish()
             return
-        self._source_available = True
+        if is_production:
+            self._source_available = True
         try:
             raw = float(state.state)
         except (TypeError, ValueError):
             self._unusable += 1
             self._publish()
             return
-        kw = to_kw(raw, state.attributes.get("unit_of_measurement"))
-        if kw is None:
+        unit = state.attributes.get("unit_of_measurement")
+        value = to_percent(raw, unit) if spec.percent else to_kw(raw, unit)
+        if value is None:
             # An unrecognised unit is not a glitch: the sensor cannot be
             # interpreted at all. Counted, not guessed at.
             self._unusable += 1
             self._publish()
             return
+        if spec.invert:
+            value = -value
+        if spec.percent:
+            # The SoC sensor also carries the battery's rated power; refresh
+            # it on every write so a replaced battery is reported within a day.
+            self._battery_power_kw = rated_battery_kw(state.attributes)
 
         # last_updated advances on every write by the source integration, even
         # when the value did not change: a steady 4.2 kW for a minute is many
         # real readings, not one.
         ts = state.last_updated
-        if self._last_ts is not None and ts <= self._last_ts:
+        last = self._last_ts.get(spec.entity_id)
+        if last is not None and ts <= last:
             return
-        self._last_ts = ts
+        self._last_ts[spec.entity_id] = ts
 
-        self._current_kw = round(kw, 3)
-        self._queue.append(
-            {
-                # Microseconds: two readings in the same millisecond stay two
-                # rows in order, and the server measures received - ts latency.
-                "ts": ts.astimezone(UTC)
-                .isoformat(timespec="microseconds")
-                .replace("+00:00", "Z"),
-                "power_kw": round(kw, 3),
-            }
-        )
+        if is_production:
+            self._current_kw = round(value, 3)
+        sample: dict[str, Any] = {
+            # Microseconds: two readings in the same millisecond stay two
+            # rows in order, and the server measures received - ts latency.
+            "ts": ts.astimezone(UTC)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z"),
+            "power_kw": round(value, 3),
+        }
+        if spec.channel_key:
+            sample["channel_key"] = spec.channel_key
+        self._queue.append(sample)
         if len(self._queue) > MAX_QUEUE:
             dropped = len(self._queue) - MAX_QUEUE
             del self._queue[:dropped]
@@ -419,6 +558,7 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
                 samples=batch or None,
                 measurements=legacy,
                 donor=self._donor_report(),
+                channels=self._channel_decls or None,
             )
             # Slice by count, never clear: readings that arrived DURING the
             # request are at the tail and must survive.
@@ -489,13 +629,15 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
         if self._measured_interval is not None:
             report["measured_sample_interval_seconds"] = self._measured_interval
             report["sample_capability"] = capability_tier(self._measured_interval)
+        if self._battery_power_kw is not None:
+            report["battery_power_kw"] = self._battery_power_kw
         return report
 
     # --- rate probe -----------------------------------------------------------
 
     @callback
     def _start_probe(self, _now: datetime | None = None) -> None:
-        """Measure how often the sensor actually updates."""
+        """Measure how often the production sensor actually updates."""
         if self._probe_running:
             return  # the daily restart must not cut a running window short
         if self._unsub_probe:
