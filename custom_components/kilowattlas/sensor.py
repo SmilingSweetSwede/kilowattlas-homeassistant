@@ -1,4 +1,11 @@
-"""Sensors showing what is being shared with Kilowattlas, and how it is going."""
+"""Sensors showing how sharing with Kilowattlas is going.
+
+For homes that entered their sensors in this integration instead of the Energy
+settings, this platform also sets up the Energy dashboard's own power
+transform sensor (`homeassistant.components.energy.sensor.EnergyPowerSensor`)
+for every inverted or two-sensor `power_config`, exactly as the Energy
+dashboard does for its own settings.
+"""
 
 from __future__ import annotations
 
@@ -6,20 +13,31 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
+from homeassistant.components.energy.helpers import generate_power_sensor_entity_id
+from homeassistant.components.energy.sensor import EnergyPowerSensor
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import EntityCategory, UnitOfPower, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MAP_BASE_URL, STATUSES
+from .const import (
+    CONF_PREFERENCES,
+    CONF_SOURCE,
+    DOMAIN,
+    MAP_BASE_URL,
+    SOURCE_MANUAL,
+    STATUSES,
+)
 from .coordinator import KilowattlasConfigEntry, KilowattlasCoordinator, KilowattlasData
+from .energy_source import power_transforms, transform_unique_id
 
 # Push-based: entities update when the coordinator publishes, never by polling.
 PARALLEL_UPDATES = 0
@@ -30,20 +48,9 @@ class KilowattlasSensorDescription(SensorEntityDescription):
     """Describes a Kilowattlas sensor."""
 
     value_fn: Callable[[KilowattlasData], float | int | str | datetime | None]
-    requires_source: bool = False
 
 
 SENSORS: tuple[KilowattlasSensorDescription, ...] = (
-    KilowattlasSensorDescription(
-        key="shared_production",
-        translation_key="shared_production",
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfPower.KILO_WATT,
-        suggested_display_precision=3,
-        value_fn=lambda d: d.current_kw,
-        requires_source=True,
-    ),
     KilowattlasSensorDescription(
         key="sharing_status",
         translation_key="sharing_status",
@@ -51,6 +58,13 @@ SENSORS: tuple[KilowattlasSensorDescription, ...] = (
         options=STATUSES,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda d: d.status,
+    ),
+    KilowattlasSensorDescription(
+        key="shared_channels",
+        translation_key="shared_channels",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.shared_channels,
     ),
     KilowattlasSensorDescription(
         key="last_sent",
@@ -99,10 +113,37 @@ async def async_setup_entry(
     entry: KilowattlasConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the sensors for a config entry."""
+    """Set up the status sensors, and power transforms for manual preferences."""
     coordinator = entry.runtime_data
     async_add_entities(
         KilowattlasSensor(coordinator, description) for description in SENSORS
+    )
+
+    transforms = (
+        power_transforms(entry.options.get(CONF_PREFERENCES))
+        if entry.options.get(CONF_SOURCE) == SOURCE_MANUAL
+        else []
+    )
+    wanted = {transform_unique_id(entry.entry_id, t) for t in transforms}
+    # A transform that is no longer configured (changed in the options, or
+    # the home switched to its Energy settings) leaves no entity behind.
+    registry = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if reg_entry.unique_id.endswith("_power") and reg_entry.unique_id not in wanted:
+            registry.async_remove(reg_entry.entity_id)
+    async_add_entities(
+        EnergyPowerSensor(
+            t.source_type,
+            t.config,  # type: ignore[arg-type]
+            transform_unique_id(entry.entry_id, t),
+            # The Energy dashboard's own naming, prefixed so the entity never
+            # collides with the one it creates if the same power_config is
+            # later entered in the Energy settings.
+            generate_power_sensor_entity_id(t.source_type, t.config).replace(  # type: ignore[arg-type]
+                "sensor.", f"sensor.{DOMAIN}_", 1
+            ),
+        )
+        for t in transforms
     )
 
 
@@ -134,19 +175,10 @@ class KilowattlasSensor(CoordinatorEntity[KilowattlasCoordinator], SensorEntity)
             identifiers={(DOMAIN, entry.entry_id)},
             name="Kilowattlas",
             manufacturer="Kilowattlas",
-            model="Solar sharing",
+            model="Energy sharing",
             entry_type=DeviceEntryType.SERVICE,
             configuration_url=map_url(coordinator.hass),
         )
-
-    @property
-    def available(self) -> bool:
-        """Production is unavailable while the source sensor is."""
-        if not super().available:
-            return False
-        if self.entity_description.requires_source:
-            return self.coordinator.data.source_available
-        return True
 
     @property
     def native_value(self) -> float | int | str | datetime | None:

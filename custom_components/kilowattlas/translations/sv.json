@@ -2,108 +2,268 @@
   "config": {
     "step": {
       "user": {
-        "title": "Dela din solelproduktion på Kilowattlas-kartan",
-        "description": "Kilowattlas är en gratis, publik, live-uppdaterad karta över solelproduktion byggd av mätvärden som hushåll som ditt delar. Integrationen är öppen källkod och skickar bara det som står här.\n\n**Vad som skickas och visas**\n\n- Din hemposition i Home Assistant skickas en gång, som förslag på var anläggningen finns. Du bekräftar eller justerar den på webbplatsen innan något visas.\n- Anläggningens position, kapacitet och aktuella produktion visas publikt på kilowattlas.com, utan ditt namn, konto eller e-post.\n- Varje mätvärde från effektsensorn du väljer skickas när sensorn rapporterar det. Väljer du även en sensor för batterieffekt, näteffekt eller batteriets laddnivå skickas deras mätvärden på samma sätt och visas tillsammans med din anläggning. Inget annat från Home Assistant skickas.\n\n**Vad datan används till**\n\n- Den publika kartan och din egen produktionshistorik.\n- Jämförelse av hur din anläggning presterar mot liknande anläggningar.\n\nAll annan användning av din data, till exempel fellarm via en servicepartner eller aggregerad data för prognoser på elmarknaden, är ett separat val du gör på webbplatsen. Det slås aldrig på av den här integrationen.\n\nDu kan sluta när som helst: ta bort integrationen och radera sedan anläggningen på kilowattlas.com för att ta bort historiken.",
+        "title": "Dela dina energidata med Kilowattlas",
+        "description": "Kilowattlas är en offentlig karta över hemmens energiproduktion och en tjänst för energidelning. Den här integrationen skickar mätvärdena från effektsensorerna i din Energi-panel till kilowattlas.com så fort de mäts, och inget annat.\n\n- Ditt hems position skickas en gång som förslag; du bekräftar den på webbplatsen.\n- Sol och batteri visas offentligt på kartan med ungefär 100 m noggrannhet, utan ditt namn. Elnätets, hemmets och enskilda enheters effekt syns bara för dig.\n- Du kan ändra det per kanal på kilowattlas.com, och sluta när som helst genom att ta bort integrationen och radera installationen på webbplatsen.",
         "data": {
-          "consent": "Jag godkänner att anläggningens position, kapacitet, aktuella produktion och, om jag väljer att dela dem, batteri- och nätflöde visas publikt på kilowattlas.com"
+          "consent": "Jag godkänner att min Energi-panels effektvärden skickas till Kilowattlas och visas som beskrivs ovan"
         },
         "data_description": {
-          "consent": "Krävs för att fortsätta. Gäller bara den publika kartan."
+          "consent": "Krävs för att fortsätta."
         }
       },
       "link": {
         "title": "Godkänn kopplingen",
-        "description": "Öppna sidan, logga in och godkänn kopplingen:\n\n{verification_uri}\n\nDin kod: **{user_code}**\n\nDialogen fortsätter automatiskt när du har godkänt."
+        "description": "Öppna den här sidan, logga in och godkänn kopplingen:\n\n{verification_uri}\n\nDin kod: **{user_code}**\n\nDialogen fortsätter automatiskt när du har godkänt."
       },
-      "sensor": {
-        "title": "Välj dina sensorer",
-        "description": "Välj den effektsensor som visar din solelproduktion (i W, kW eller MW). Batteri- och nätsensor är valfria: lämna dem tomma för att bara dela produktion.",
+      "channels": {
+        "title": "Välj vad som delas",
+        "description": "De här effektsensorerna finns i din Energi-panel. Avmarkera dem du inte vill dela. Sensorer du lägger till i Energi-panelen senare delas också; du kan ändra det här när som helst och stänga av varje kanal på kilowattlas.com.",
         "data": {
-          "power_sensor": "Solcellseffekt-sensor",
-          "battery_power_sensor": "Batterieffekt-sensor (valfri)",
-          "grid_power_sensor": "Näteffekt-sensor (valfri)",
-          "battery_soc_sensor": "Batteriets laddnivå (valfri)",
-          "battery_charge_positive": "Batterisensorn visar laddning som positivt",
-          "grid_import_positive": "Nätsensorn visar import som positivt"
-        },
-        "data_description": {
-          "power_sensor": "Välj växelriktarens eller mätarens produktionssensor, inte hushållets förbrukning.",
-          "battery_power_sensor": "Effekt in i eller ut ur hemmabatteriet. Kilowattlas räknar urladdning (effekt ut ur batteriet) som positivt; kryssa i rutan nedan om din sensor gör tvärtom.",
-          "grid_power_sensor": "Effekt vid din nätanslutning (P1/HAN-mätare eller energisystem). Kilowattlas räknar export som positivt; kryssa i rutan nedan om din sensor gör tvärtom.",
-          "battery_soc_sensor": "Batteriets laddnivå i procent. Batteriets märkeffekt läses från sensorns attribut när den finns.",
-          "battery_charge_positive": "Lämna av om positiva värden betyder att batteriet laddas ur.",
-          "grid_import_positive": "Lämna av om positiva värden betyder att du exporterar till nätet."
+          "share": "Dela"
+        }
+      },
+      "energy_missing": {
+        "title": "Ställ in Energi-panelen",
+        "description": "Kilowattlas delar effektsensorerna i din Energi-panel, och inga är inställda än. Lägg till dem under **Inställningar → Instrumentpaneler → Energi** (effektfälten för elnät, sol, batteri, hemmet och enskilda enheter) och kontrollera sedan igen. Eller ange samma sensorer här.",
+        "menu_options": {
+          "channels": "Jag har ställt in Energi-panelen, kontrollera igen",
+          "manual": "Ange sensorerna här i stället"
+        }
+      },
+      "manual": {
+        "title": "Ange dina sensorer",
+        "description": "Samma effektinställningar som i Energi-panelen. Fyll i det du har; allt är valfritt, men minst en sensor behövs.",
+        "sections": {
+          "grid": {
+            "name": "Elnät",
+            "description": "Effekten vid din elanslutning, som i Energi-panelens inställningar för elnät.",
+            "data": {
+              "grid_mode": "Typ av sensor",
+              "grid_power": "Effekt från elnätet",
+              "grid_power_to": "Effekt till elnätet"
+            },
+            "data_description": {
+              "grid_mode": "En sensor som är positiv när du köper el; en sensor som är positiv när du säljer (inverterad); eller två sensorer, en för köp och en för försäljning.",
+              "grid_power": "Med två sensorer: effekten du tar från elnätet.",
+              "grid_power_to": "Bara med två sensorer: effekten du skickar ut på elnätet."
+            }
+          },
+          "solar": {
+            "name": "Sol",
+            "description": "Effekten dina solpaneler producerar.",
+            "data": {
+              "solar_power": "Soleffekt"
+            },
+            "data_description": {
+              "solar_power": "Positiv när panelerna producerar."
+            }
+          },
+          "battery": {
+            "name": "Batteri",
+            "description": "Ditt hembatteri, som i Energi-panelens inställningar för batteri.",
+            "data": {
+              "battery_mode": "Typ av sensor",
+              "battery_power": "Batterieffekt",
+              "battery_power_to": "Effekt in i batteriet",
+              "battery_soc": "Laddnivå",
+              "battery_capacity": "Användbar kapacitet"
+            },
+            "data_description": {
+              "battery_mode": "En sensor som är positiv när batteriet laddar ur; en sensor som är positiv när det laddar (inverterad); eller två sensorer, en för urladdning och en för laddning.",
+              "battery_power": "Med två sensorer: effekten ut ur batteriet.",
+              "battery_power_to": "Bara med två sensorer: effekten in i batteriet.",
+              "battery_soc": "I procent.",
+              "battery_capacity": "Valfritt."
+            }
+          },
+          "home": {
+            "name": "Hemmet",
+            "description": "Effekten hela hemmet använder, som i Energi-panelens inställningar för hemmet.",
+            "data": {
+              "home_power": "Hemmets effekt"
+            },
+            "data_description": {
+              "home_power": "Positiv; mätt vid huvudcentralen."
+            }
+          },
+          "devices": {
+            "name": "Enskilda enheter",
+            "description": "Enheter du också följer i Energi-panelen, till exempel en laddbox eller en värmepump.",
+            "data": {
+              "device_power": "Effektsensorer för enheter"
+            },
+            "data_description": {
+              "device_power": "En sensor per enhet; positiv när den drar effekt."
+            }
+          }
         }
       },
       "reauth_confirm": {
-        "title": "Koppla om Kilowattlas",
-        "description": "Kilowattlas accepterar inte längre kopplingen för den här anläggningen. Godkänn en ny koppling på webbplatsen för att fortsätta dela."
-      },
-      "reconfigure": {
-        "title": "Ändra delade sensorer",
-        "description": "Välj sensorerna som ska delas. Töm en valfri sensor för att sluta dela den. Mätvärden som redan är köade behålls.",
-        "data": {
-          "power_sensor": "Solcellseffekt-sensor",
-          "battery_power_sensor": "Batterieffekt-sensor (valfri)",
-          "grid_power_sensor": "Näteffekt-sensor (valfri)",
-          "battery_soc_sensor": "Batteriets laddnivå (valfri)",
-          "battery_charge_positive": "Batterisensorn visar laddning som positivt",
-          "grid_import_positive": "Nätsensorn visar import som positivt"
-        },
-        "data_description": {
-          "power_sensor": "Välj växelriktarens eller mätarens produktionssensor, inte hushållets förbrukning.",
-          "battery_power_sensor": "Effekt in i eller ut ur hemmabatteriet. Kilowattlas räknar urladdning (effekt ut ur batteriet) som positivt; kryssa i rutan nedan om din sensor gör tvärtom.",
-          "grid_power_sensor": "Effekt vid din nätanslutning (P1/HAN-mätare eller energisystem). Kilowattlas räknar export som positivt; kryssa i rutan nedan om din sensor gör tvärtom.",
-          "battery_soc_sensor": "Batteriets laddnivå i procent. Batteriets märkeffekt läses från sensorns attribut när den finns.",
-          "battery_charge_positive": "Lämna av om positiva värden betyder att batteriet laddas ur.",
-          "grid_import_positive": "Lämna av om positiva värden betyder att du exporterar till nätet."
-        }
+        "title": "Koppla Kilowattlas på nytt",
+        "description": "Kilowattlas godtar inte längre kopplingen för den här installationen. Godkänn en ny koppling på webbplatsen för att fortsätta dela."
       }
     },
     "progress": {
       "wait_for_approval": "Väntar på att du godkänner kopplingen på kilowattlas.com. Öppna sidan, logga in och ange koden **{user_code}**:\n\n{verification_uri}"
     },
     "error": {
-      "cannot_connect": "Kunde inte ansluta",
-      "consent_required": "Du behöver godkänna den publika kartan innan integrationen kan dela din produktion."
+      "cannot_connect": "Det gick inte att ansluta",
+      "consent_required": "Du behöver godkänna innan integrationen kan dela dina mätvärden.",
+      "invalid_power_config": "Med två sensorer behöver du välja båda.",
+      "nothing_to_share": "Välj minst en sensor."
     },
     "abort": {
-      "already_configured": "Anläggningen är redan ansluten",
-      "cannot_connect": "Kunde inte ansluta",
+      "already_configured": "Tjänsten är redan konfigurerad",
+      "cannot_connect": "Det gick inte att ansluta",
       "expired": "Kopplingskoden gick ut innan den godkändes. Börja om för att få en ny kod.",
-      "reauth_successful": "Omkopplingen lyckades",
-      "reconfigure_successful": "Ändringen sparades",
-      "unique_id_mismatch": "Den godkända kopplingen tillhör en annan anläggning än den som kopplas om."
+      "reauth_successful": "Återautentiseringen lyckades",
+      "unique_id_mismatch": "Den godkända kopplingen hör till en annan installation än den som kopplas på nytt."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Vad som delas",
+        "menu_options": {
+          "channels": "Dela från Energi-panelen",
+          "manual": "Ange sensorerna här i stället"
+        }
+      },
+      "channels": {
+        "title": "Välj vad som delas",
+        "description": "De här effektsensorerna finns i din Energi-panel. Avmarkera dem du inte vill dela. Sensorer du lägger till i Energi-panelen senare delas också; du kan ändra det här när som helst och stänga av varje kanal på kilowattlas.com.",
+        "data": {
+          "share": "Dela"
+        }
+      },
+      "manual": {
+        "title": "Ange dina sensorer",
+        "description": "Samma effektinställningar som i Energi-panelen. Fyll i det du har; allt är valfritt, men minst en sensor behövs.",
+        "sections": {
+          "grid": {
+            "name": "Elnät",
+            "description": "Effekten vid din elanslutning, som i Energi-panelens inställningar för elnät.",
+            "data": {
+              "grid_mode": "Typ av sensor",
+              "grid_power": "Effekt från elnätet",
+              "grid_power_to": "Effekt till elnätet"
+            },
+            "data_description": {
+              "grid_mode": "En sensor som är positiv när du köper el; en sensor som är positiv när du säljer (inverterad); eller två sensorer, en för köp och en för försäljning.",
+              "grid_power": "Med två sensorer: effekten du tar från elnätet.",
+              "grid_power_to": "Bara med två sensorer: effekten du skickar ut på elnätet."
+            }
+          },
+          "solar": {
+            "name": "Sol",
+            "description": "Effekten dina solpaneler producerar.",
+            "data": {
+              "solar_power": "Soleffekt"
+            },
+            "data_description": {
+              "solar_power": "Positiv när panelerna producerar."
+            }
+          },
+          "battery": {
+            "name": "Batteri",
+            "description": "Ditt hembatteri, som i Energi-panelens inställningar för batteri.",
+            "data": {
+              "battery_mode": "Typ av sensor",
+              "battery_power": "Batterieffekt",
+              "battery_power_to": "Effekt in i batteriet",
+              "battery_soc": "Laddnivå",
+              "battery_capacity": "Användbar kapacitet"
+            },
+            "data_description": {
+              "battery_mode": "En sensor som är positiv när batteriet laddar ur; en sensor som är positiv när det laddar (inverterad); eller två sensorer, en för urladdning och en för laddning.",
+              "battery_power": "Med två sensorer: effekten ut ur batteriet.",
+              "battery_power_to": "Bara med två sensorer: effekten in i batteriet.",
+              "battery_soc": "I procent.",
+              "battery_capacity": "Valfritt."
+            }
+          },
+          "home": {
+            "name": "Hemmet",
+            "description": "Effekten hela hemmet använder, som i Energi-panelens inställningar för hemmet.",
+            "data": {
+              "home_power": "Hemmets effekt"
+            },
+            "data_description": {
+              "home_power": "Positiv; mätt vid huvudcentralen."
+            }
+          },
+          "devices": {
+            "name": "Enskilda enheter",
+            "description": "Enheter du också följer i Energi-panelen, till exempel en laddbox eller en värmepump.",
+            "data": {
+              "device_power": "Effektsensorer för enheter"
+            },
+            "data_description": {
+              "device_power": "En sensor per enhet; positiv när den drar effekt."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "invalid_power_config": "Med två sensorer behöver du välja båda.",
+      "nothing_to_share": "Välj minst en sensor."
+    }
+  },
+  "selector": {
+    "power_mode": {
+      "options": {
+        "single": "En sensor",
+        "inverted": "En sensor, inverterad",
+        "two": "Två sensorer"
+      }
+    }
+  },
+  "issues": {
+    "no_channels": {
+      "title": "Kilowattlas har inget att dela",
+      "description": "Ingen effektsensor är inställd i din Energi-panel. Lägg till effektfälten under **Inställningar → Instrumentpaneler → Energi**, eller ange sensorerna i Kilowattlas alternativ."
+    },
+    "use_energy_settings": {
+      "title": "Dela från din Energi-panel",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Dela från din Energi-panel",
+            "description": "Din Energi-panel har nu effektsensorer inställda. Kilowattlas kan dela dem i stället för sensorerna som angetts i dess egna alternativ, så att du har en lista på ett ställe. Dina kanaler och deras historik på kilowattlas.com förblir som de är."
+          }
+        }
+      }
     }
   },
   "entity": {
     "sensor": {
-      "shared_production": {
-        "name": "Delad produktion"
-      },
       "sharing_status": {
         "name": "Delningsstatus",
         "state": {
           "starting": "Startar",
           "connected": "Ansluten",
           "retrying": "Anslutningsfel, försöker igen",
-          "revoked": "Frånkopplad, åtkomst återkallad"
+          "revoked": "Frånkopplad, åtkomsten återkallad"
         }
+      },
+      "shared_channels": {
+        "name": "Delade kanaler"
       },
       "last_sent": {
         "name": "Senast skickat"
       },
       "queued_readings": {
-        "name": "Köade mätvärden"
+        "name": "Värden i kö"
       },
       "last_batch_rejected": {
-        "name": "Avvisade mätvärden i senaste sändning"
+        "name": "Avvisade värden i senaste sändningen"
       },
       "measured_sample_interval": {
         "name": "Uppmätt sensorintervall"
       },
       "unusable_readings": {
-        "name": "Oanvändbara mätvärden"
+        "name": "Oanvändbara värden"
       }
     }
   }

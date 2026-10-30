@@ -1,8 +1,9 @@
-"""Forwarding behaviour: every reading, at once, queued only on failure."""
+"""Forwarding: every reading at once; caught up from the recorder on failure."""
 
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,535 +16,474 @@ from aiokilowattlas import (
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
-
-from custom_components.kilowattlas.const import DOMAIN
-from custom_components.kilowattlas.coordinator import (
-    MAX_QUEUE,
-    MAX_SEND,
-    RETRY_BASE_SECONDS,
-    STORAGE_KEY,
-    STORAGE_VERSION,
-    KilowattlasStore,
-    rated_battery_kw,
-    to_kw,
-    to_percent,
+from pytest_homeassistant_custom_component.components.recorder.common import (
+    async_wait_recording_done,
 )
 
-from .conftest import BATTERY_SENSOR, GRID_SENSOR, SENSOR, SOC_SENSOR, TOKEN
+from custom_components.kilowattlas.const import DOMAIN, STORAGE_KEY
+from custom_components.kilowattlas.coordinator import (
+    MAX_SEND,
+    PROBE_WINDOW_SECONDS,
+    RETRY_BASE_SECONDS,
+    to_kw,
+)
+
+from .conftest import (
+    BATTERY,
+    DISHWASHER,
+    ENERGY_PREFS,
+    GRID,
+    POWER_KW,
+    POWER_W,
+    SOC,
+    SOLAR,
+    energy_entry,
+    save_energy_prefs,
+    set_states,
+    setup_entry,
+)
 
 
-def _samples(mock_client: MagicMock) -> list[dict]:
-    """Every raw sample sent across all ingest calls, in order."""
-    out: list[dict] = []
+def sent(mock_client: MagicMock) -> list[dict[str, Any]]:
+    """Every sample sent so far, in order."""
+    out: list[dict[str, Any]] = []
     for call in mock_client.ingest.await_args_list:
         out.extend(call.kwargs.get("samples") or [])
     return out
 
 
+def values(mock_client: MagicMock, key: str = "") -> list[float]:
+    """The values sent on one channel."""
+    return [s["power_kw"] for s in sent(mock_client) if s.get("channel_key", "") == key]
+
+
 @pytest.mark.parametrize(
     ("value", "unit", "expected"),
     [
-        (1500, "W", 1.5),
-        (1.5, "kW", 1.5),
-        (0.0015, "MW", 1.5),
-        (2, None, 2),
+        (4200, "W", 4.2),
+        (4.2, "kW", 4.2),
+        (0.0042, "MW", 4.2),
+        (4200000, "mW", 4.2),  # milliwatt, not megawatt
+        (1, "GW", 1_000_000),
+        (1, None, None),
         (1, "kWh", None),
     ],
 )
-def test_to_kw(value: float, unit: str | None, expected: float | None) -> None:
-    assert to_kw(value, unit) == expected
+def test_to_kw_uses_power_converter(
+    value: float, unit: str | None, expected: float | None
+) -> None:
+    """Home Assistant's PowerConverter, so mW and MW are no longer confused."""
+    result = to_kw(value, unit)
+    assert result == pytest.approx(expected) if expected is not None else result is None
 
 
-async def test_reading_is_sent_immediately(
+async def test_every_channel_sent_in_energy_sign(
     hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
 ) -> None:
-    """A state write is forwarded without any timer delay, normalised to kW."""
-    mock_client.ingest.reset_mock()
-    hass.states.async_set(SENSOR, "3500", {"unit_of_measurement": "W"})
+    """Each Energy field is sent as its own channel, sign untouched."""
+    hass.states.async_set(SOLAR, "5000", POWER_W)
+    hass.states.async_set(GRID, "1.2", POWER_KW)  # importing
+    hass.states.async_set(BATTERY, "-2", POWER_KW)  # charging
+    hass.states.async_set(SOC, "65", {"unit_of_measurement": "%"})
+    hass.states.async_set(DISHWASHER, "2000", POWER_W)
     await hass.async_block_till_done()
 
-    mock_client.ingest.assert_awaited_once()
-    call = mock_client.ingest.await_args
-    assert call.args == (TOKEN,)
-    (sample,) = call.kwargs["samples"]
-    assert sample["power_kw"] == 3.5
-    assert sample["ts"].endswith("Z")
-    assert len(sample["ts"]) == len("2026-10-14T10:00:00.000000Z")  # microseconds
-    assert call.kwargs["donor"] == {"config_version": 1}
-    # Production only: the 0.1.0 wire format, no channel declarations.
-    assert call.kwargs["channels"] is None
-    assert "channel_key" not in sample
+    assert values(mock_client, "") == [5.0]
+    assert values(mock_client, "grid") == [1.2]
+    assert values(mock_client, "battery") == [-2.0]
+    assert values(mock_client, "battery_soc") == [65.0]
+    assert values(mock_client, "device_sensor.dishwasher_energy") == [2.0]
 
-    assert hass.states.get("sensor.kilowattlas_shared_production").state == "3.5"
-    assert hass.states.get("sensor.kilowattlas_queued_readings").state == "0"
+    call = mock_client.ingest.await_args_list[-1].kwargs
+    assert {"channel_key": "grid", "measurement_kind": "grid_power"} in call["channels"]
+    assert {
+        "channel_key": "device_sensor.dishwasher_energy",
+        "measurement_kind": "device_power",
+        "name": "Dishwasher",
+    } in call["channels"]
+    assert call["donor"]["battery_capacity_kwh"] == 10.0
 
 
-async def test_burst_all_readings_sent_distinct(
-    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+async def test_unticked_battery_does_not_report_its_size(
+    hass: HomeAssistant, mock_client: MagicMock
 ) -> None:
-    """Ten sub-second readings all reach the server, each with its own timestamp."""
-    mock_client.ingest.reset_mock()
-    for i in range(10):
-        hass.states.async_set(SENSOR, str(1000 + i), {"unit_of_measurement": "W"})
+    """A battery's size says it exists: unticked, it is not sent either."""
+    set_states(hass)
+    await save_energy_prefs(hass, ENERGY_PREFS)
+    await setup_entry(hass, energy_entry(excluded_channels=["battery", "battery_soc"]))
+    hass.states.async_set(SOLAR, "5000", POWER_W)
     await hass.async_block_till_done()
 
-    sent = _samples(mock_client)
-    assert [s["power_kw"] for s in sent] == [
-        round((1000 + i) / 1000, 3) for i in range(10)
-    ]
-    assert len({s["ts"] for s in sent}) == 10
-    # Natural batching: the first went alone, the rest in follow-up requests.
-    assert 1 <= mock_client.ingest.await_count <= 10
+    call = mock_client.ingest.await_args_list[-1].kwargs
+    assert "battery_capacity_kwh" not in (call.get("donor") or {})
 
 
-async def test_unusable_readings_are_counted_not_sent(
-    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
-) -> None:
-    """unknown/unavailable, non-numeric and unknown-unit states are not forwarded."""
-    mock_client.ingest.reset_mock()
-    hass.states.async_set(SENSOR, "unavailable")
-    await hass.async_block_till_done()
-    assert (
-        hass.states.get("sensor.kilowattlas_shared_production").state == "unavailable"
-    )
-    hass.states.async_set(SENSOR, "abc", {"unit_of_measurement": "W"})
-    hass.states.async_set(SENSOR, "5", {"unit_of_measurement": "kWh"})
-    await hass.async_block_till_done()
-    mock_client.ingest.assert_not_awaited()
-    # The counter entity is disabled by default; read the snapshot instead.
-    assert init_integration.runtime_data.data.unusable == 3
-
-
-async def test_failed_send_queues_and_retries_with_backoff(
+async def test_unchanged_value_is_a_reading(
     hass: HomeAssistant,
-    freezer: FrozenDateTimeFactory,
     init_integration: MockConfigEntry,
     mock_client: MagicMock,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
-    """Nothing is dropped while the server is down; backoff doubles; recovery drains."""
-    mock_client.ingest.reset_mock()
+    """A sensor writing the same value again (state_reported) is sent too."""
+    hass.states.async_set(SOLAR, "5000", POWER_W)
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=10))
+    hass.states.async_set(SOLAR, "5000", POWER_W)
+    await hass.async_block_till_done()
+    samples = [s for s in sent(mock_client) if "channel_key" not in s]
+    assert [s["power_kw"] for s in samples] == [5.0, 5.0]
+    assert samples[0]["ts"] < samples[1]["ts"]
+
+
+async def test_values_present_at_start_are_not_sent(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """The value already there at start predates sharing."""
+    await hass.async_block_till_done()
+    mock_client.ingest.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("state", "attributes"),
+    [
+        ("unavailable", POWER_W),
+        ("abc", POWER_W),
+        ("5", {}),  # no unit: the Energy dashboard would not accept it either
+        ("5", {"unit_of_measurement": "kWh"}),
+    ],
+)
+async def test_unusable_readings_are_counted_not_sent(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    state: str,
+    attributes: dict[str, str],
+) -> None:
+    """Nothing is guessed at."""
+    hass.states.async_set(SOLAR, state, attributes)
+    await hass.async_block_till_done()
+    assert sent(mock_client) == []
+    assert init_integration.runtime_data.data.unusable == 1
+
+
+async def test_soc_must_be_percent(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    """A state of charge without % is not a state of charge."""
+    hass.states.async_set(SOC, "50", POWER_KW)
+    await hass.async_block_till_done()
+    assert values(mock_client, "battery_soc") == []
+
+
+async def test_failure_retries_with_backoff(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A failed send keeps the reading and tries again later."""
     mock_client.ingest.side_effect = KilowattlasConnectionError("down")
-
-    freezer.tick(timedelta(seconds=1))  # frozen clock: advance so last_updated differs
-    hass.states.async_set(SENSOR, "1000", {"unit_of_measurement": "W"})
+    hass.states.async_set(SOLAR, "5000", POWER_W)
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.kilowattlas_sharing_status").state == "retrying"
-    assert hass.states.get("sensor.kilowattlas_queued_readings").state == "1"
-    first_calls = mock_client.ingest.await_count
+    coordinator = init_integration.runtime_data
+    assert coordinator.data.status == "retrying"
+    assert coordinator.queue_length == 1
 
-    # New readings during backoff are queued, not sent (respects the backoff).
-    freezer.tick(timedelta(seconds=1))  # frozen clock: advance so last_updated differs
-    hass.states.async_set(SENSOR, "1100", {"unit_of_measurement": "W"})
-    await hass.async_block_till_done()
-    assert mock_client.ingest.await_count == first_calls
-    assert hass.states.get("sensor.kilowattlas_queued_readings").state == "2"
-
-    # Backoff fires, still down.
+    mock_client.ingest.side_effect = None
     freezer.tick(timedelta(seconds=RETRY_BASE_SECONDS + 1))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert mock_client.ingest.await_count == first_calls + 1
-
-    # Server back: the retry sends both queued readings in one request.
-    mock_client.ingest.side_effect = None
-    mock_client.ingest.return_value = IngestResult(accepted=2)
-    freezer.tick(timedelta(seconds=RETRY_BASE_SECONDS * 2 + 1))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    last = mock_client.ingest.await_args.kwargs["samples"]
-    assert [s["power_kw"] for s in last] == [1.0, 1.1]
-    assert hass.states.get("sensor.kilowattlas_sharing_status").state == "connected"
-    assert hass.states.get("sensor.kilowattlas_queued_readings").state == "0"
-    assert hass.states.get("sensor.kilowattlas_last_sent").state != "unknown"
-
-
-async def test_queue_is_capped_oldest_dropped(
-    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
-) -> None:
-    """Past MAX_QUEUE the oldest readings go first."""
-    coordinator = init_integration.runtime_data
-    mock_client.ingest.side_effect = KilowattlasConnectionError("down")
-    coordinator._queue = [{"ts": f"t{i}", "power_kw": 1.0} for i in range(MAX_QUEUE)]
-    hass.states.async_set(SENSOR, "999", {"unit_of_measurement": "W"})
-    await hass.async_block_till_done()
-    assert len(coordinator._queue) == MAX_QUEUE
-    assert coordinator._queue[0]["ts"] == "t1"
-    assert coordinator._queue[-1]["power_kw"] == 0.999
-
-
-async def test_drain_is_split_in_batches(
-    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
-) -> None:
-    """A big backlog goes out MAX_SEND rows at a time, back to back."""
-    coordinator = init_integration.runtime_data
-    mock_client.ingest.reset_mock()
-    coordinator._queue = [
-        {"ts": f"t{i}", "power_kw": 1.0} for i in range(MAX_SEND * 2 + 5)
-    ]
-    hass.states.async_set(SENSOR, "1", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-    sizes = [len(c.kwargs["samples"]) for c in mock_client.ingest.await_args_list]
-    assert sizes == [MAX_SEND, MAX_SEND, 6]
+    assert coordinator.data.status == "connected"
     assert coordinator.queue_length == 0
+    assert coordinator.cursors[""] == sent(mock_client)[-1]["ts"]
 
 
-async def test_rejected_readings_are_surfaced(
+async def test_rejections_are_logged(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,
     mock_client: MagicMock,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Server rejections show on the diagnostic sensor and in the log."""
+    """A rejected reading is not resent, but it is never silent."""
     mock_client.ingest.return_value = IngestResult(
-        accepted=0, rejected=[RejectedSample("t", "exceeds_capacity")]
+        accepted=0, rejected=[RejectedSample(ts="t", reason="negative_power")]
     )
-    hass.states.async_set(SENSOR, "99", {"unit_of_measurement": "kW"})
+    hass.states.async_set(SOLAR, "5000", POWER_W)
     await hass.async_block_till_done()
-    assert (
-        hass.states.get("sensor.kilowattlas_rejected_readings_in_last_batch").state
-        == "1"
-    )
-    assert "exceeds_capacity" in caplog.text
+    assert "negative_power" in caplog.text
+    assert init_integration.runtime_data.data.last_rejected == 1
 
 
-async def test_revoked_token_stops_sending_and_starts_reauth(
+async def test_revoked_token_starts_reauth(
     hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
 ) -> None:
-    """A 401 mid-stream: status revoked, no retries, reauth flow opened, queue kept."""
-    mock_client.ingest.reset_mock()
+    """Revoked on the server: stop, and ask for a new link."""
     mock_client.ingest.side_effect = KilowattlasAuthError("revoked")
-    hass.states.async_set(SENSOR, "1", {"unit_of_measurement": "kW"})
+    hass.states.async_set(SOLAR, "5000", POWER_W)
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.kilowattlas_sharing_status").state == "revoked"
+    assert init_integration.runtime_data.data.status == "revoked"
     flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
-    assert [f["context"]["source"] for f in flows] == [SOURCE_REAUTH]
-    calls = mock_client.ingest.await_count
-
-    # Further readings are neither sent nor retried.
-    hass.states.async_set(SENSOR, "2", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-    assert mock_client.ingest.await_count == calls
-    assert init_integration.runtime_data.queue_length == 1
-
-
-async def test_server_config_applied_only_when_newer(
-    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
-) -> None:
-    """Config documents are adopted by increasing version and clamped."""
-    coordinator = init_integration.runtime_data
-    assert coordinator.data.config_version == 1  # from get_site at setup
-
-    mock_client.ingest.return_value = IngestResult(
-        accepted=1,
-        config={"config_version": 5, "slot_seconds": 300, "max_batch": 10**9},
-    )
-    hass.states.async_set(SENSOR, "1", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-    assert coordinator.data.config_version == 5
-    assert coordinator.data.slot_seconds == 300
-    assert coordinator.server_config["max_batch"] == 5000
-
-    mock_client.ingest.return_value = IngestResult(
-        accepted=1, config={"config_version": 2, "slot_seconds": 60}
-    )
-    hass.states.async_set(SENSOR, "2", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-    assert coordinator.data.slot_seconds == 300
-
-
-async def test_attribute_only_event_not_resent(
-    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
-) -> None:
-    """An event that does not advance last_updated is a repeat, not new data."""
-    coordinator = init_integration.runtime_data
+    assert flows[0]["context"]["source"] == SOURCE_REAUTH
+    # Nothing more is taken in.
     mock_client.ingest.reset_mock()
-    hass.states.async_set(SENSOR, "1", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-    state = hass.states.get(SENSOR)
-    coordinator._on_state(
-        MagicMock(data={"new_state": state, "old_state": state, "entity_id": SENSOR})
-    )
-    await hass.async_block_till_done()
-    assert len(_samples(mock_client)) == 1
-
-
-async def test_store_v2_migrates_to_legacy_measurements(
-    hass: HomeAssistant, hass_storage: dict
-) -> None:
-    """Old slot means are carried over to be flushed once."""
-    hass_storage[f"{STORAGE_KEY}_x"] = {
-        "version": 2,
-        "minor_version": 1,
-        "key": f"{STORAGE_KEY}_x",
-        "data": {
-            "pending": {
-                "2026-01-01T10:00:00Z": {"power_kw": 2.5, "samples": 30},
-                "bad": "not-a-dict",
-            }
-        },
-    }
-    store = KilowattlasStore(hass, STORAGE_VERSION, f"{STORAGE_KEY}_x")
-    data = await store.async_load()
-    assert data["queue"] == []
-    assert data["legacy_measurements"] == [
-        {
-            "ts": "2026-01-01T10:00:00Z",
-            "power_kw": 2.5,
-            "samples": 30,
-            "slot_seconds": 900,
-        }
-    ]
-    assert data["config"]["config_version"] == 0
-
-
-async def test_queue_survives_restart(
-    hass: HomeAssistant,
-    init_integration: MockConfigEntry,
-    mock_client: MagicMock,
-    hass_storage: dict,
-) -> None:
-    """Unsent readings are persisted on stop and sent on the next start."""
-    mock_client.ingest.side_effect = KilowattlasConnectionError("down")
-    hass.states.async_set(SENSOR, "1", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-
-    await hass.config_entries.async_unload(init_integration.entry_id)
-    await hass.async_block_till_done()
-    stored = hass_storage[f"{STORAGE_KEY}_{init_integration.entry_id}"]["data"]
-    assert len(stored["queue"]) == 1
-
-    mock_client.ingest.reset_mock()
-    mock_client.ingest.side_effect = None
-    await hass.config_entries.async_setup(init_integration.entry_id)
-    await hass.async_block_till_done()
-    assert [s["power_kw"] for s in _samples(mock_client)] == [1.0]
-
-
-async def test_rate_probe_measures_median_interval(
-    hass: HomeAssistant,
-    freezer: FrozenDateTimeFactory,
-    init_integration: MockConfigEntry,
-    mock_client: MagicMock,
-) -> None:
-    """After the startup delay, a 5-minute probe measures the sensor's real rate."""
-    freezer.tick(timedelta(seconds=61))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    for i in range(7):
-        freezer.tick(timedelta(seconds=2))
-        hass.states.async_set(SENSOR, str(1 + i), {"unit_of_measurement": "kW"})
-        await hass.async_block_till_done()
-    freezer.tick(timedelta(seconds=301))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    assert init_integration.runtime_data.data.measured_sample_interval_seconds == 2.0
-    # A restart request while a window is running (the daily one) is ignored.
-    coordinator = init_integration.runtime_data
-    coordinator._start_probe()
-    assert coordinator._probe_running
-    seen_before = coordinator._probe_seen
-    coordinator._start_probe()
-    assert coordinator._probe_seen is seen_before
-    donor = mock_client.ingest.await_args.kwargs["donor"]
-    assert "sample_capability" not in donor  # last send happened before the probe ended
-    hass.states.async_set(SENSOR, "9", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-    donor = mock_client.ingest.await_args.kwargs["donor"]
-    assert donor["sample_capability"] == "realtime_1s"
-    assert donor["measured_sample_interval_seconds"] == 2.0
-
-
-@pytest.mark.parametrize(
-    ("value", "unit", "expected"),
-    [(64, "%", 64), (64, " % ", 64), (64, None, None), (64, "kW", None)],
-)
-def test_to_percent(value: float, unit: str | None, expected: float | None) -> None:
-    assert to_percent(value, unit) == expected
-
-
-@pytest.mark.parametrize(
-    ("attrs", "expected"),
-    [
-        ({"charge_peak_ac": 5.0, "discharge_peak_ac": 7.5}, 5.0),
-        ({"charge_peak_ac": "9", "discharge_peak_ac": 6.25}, 6.25),
-        ({"charge_peak_ac": 5.0}, None),
-        ({"charge_peak_ac": None, "discharge_peak_ac": 7.5}, None),
-        ({"charge_peak_ac": 0, "discharge_peak_ac": 7.5}, None),
-        ({}, None),
-    ],
-)
-def test_rated_battery_kw(attrs: dict, expected: float | None) -> None:
-    assert rated_battery_kw(attrs) == expected
-
-
-async def test_multi_channel_readings_are_tagged(
-    hass: HomeAssistant,
-    freezer: FrozenDateTimeFactory,
-    init_integration_full: MockConfigEntry,
-    mock_client: MagicMock,
-) -> None:
-    """Each sensor goes to its own channel; signs follow Kilowattlas' convention."""
-    coordinator = init_integration_full.runtime_data
-    assert [c.channel_key for c in coordinator.channels] == [
-        "",
-        "battery",
-        "grid",
-        "battery_soc",
-    ]
-    assert coordinator.sensor == SENSOR
-    # Rated power picked up from the SoC sensor present at start.
-    assert coordinator.data.battery_power_kw == 5.0
-
-    mock_client.ingest.reset_mock()
-    freezer.tick(timedelta(seconds=1))
-    hass.states.async_set(SENSOR, "3210", {"unit_of_measurement": "W"})
-    freezer.tick(timedelta(seconds=1))
-    hass.states.async_set(BATTERY_SENSOR, "-1.5", {"unit_of_measurement": "kW"})
-    # Grid sensor reports import as positive: 0.9 kW import = -0.9 kW export.
-    freezer.tick(timedelta(seconds=1))
-    hass.states.async_set(GRID_SENSOR, "900", {"unit_of_measurement": "W"})
-    freezer.tick(timedelta(seconds=1))
-    hass.states.async_set(
-        SOC_SENSOR,
-        "64",
-        {"unit_of_measurement": "%", "charge_peak_ac": 5.0, "discharge_peak_ac": 7.5},
-    )
-    await hass.async_block_till_done()
-
-    sent = _samples(mock_client)
-    by_key = {s.get("channel_key"): s["power_kw"] for s in sent}
-    assert by_key == {None: 3.21, "battery": -1.5, "grid": -0.9, "battery_soc": 64.0}
-    assert len({s["ts"] for s in sent}) == 4  # one timestamp per sensor write
-    assert hass.states.get("sensor.kilowattlas_shared_production").state == "3.21"
-
-    # Every push declares the non-production channels by kind and carries
-    # the battery's rated power in the donor report.
-    call = mock_client.ingest.await_args
-    assert call.kwargs["channels"] == [
-        {"channel_key": "battery", "measurement_kind": "battery_power"},
-        {"channel_key": "grid", "measurement_kind": "net_export"},
-        {"channel_key": "battery_soc", "measurement_kind": "battery_soc"},
-    ]
-    assert call.kwargs["donor"] == {"config_version": 1, "battery_power_kw": 5.0}
-
-
-async def test_dedupe_is_per_entity(
-    hass: HomeAssistant,
-    init_integration_full: MockConfigEntry,
-    mock_client: MagicMock,
-) -> None:
-    """Two sensors written in the same instant are two readings, not one."""
-    coordinator = init_integration_full.runtime_data
-    mock_client.ingest.reset_mock()
-    hass.states.async_set(SENSOR, "1", {"unit_of_measurement": "kW"})
-    hass.states.async_set(BATTERY_SENSOR, "2", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-    assert len(_samples(mock_client)) == 2
-    # A repeated event for the battery alone is still a repeat.
-    state = hass.states.get(BATTERY_SENSOR)
-    coordinator._on_state(
-        MagicMock(
-            data={"new_state": state, "old_state": state, "entity_id": BATTERY_SENSOR}
-        )
-    )
-    await hass.async_block_till_done()
-    assert len(_samples(mock_client)) == 2
-    # An event for an entity the coordinator does not share is ignored.
-    coordinator._on_state(
-        MagicMock(data={"new_state": state, "old_state": state, "entity_id": "sensor.x"})
-    )
-    await hass.async_block_till_done()
-    assert len(_samples(mock_client)) == 2
-
-
-async def test_soc_without_percent_unit_is_unusable(
-    hass: HomeAssistant,
-    init_integration_full: MockConfigEntry,
-    mock_client: MagicMock,
-) -> None:
-    """A state of charge is never normalised as a power; wrong unit = unusable."""
-    coordinator = init_integration_full.runtime_data
-    mock_client.ingest.reset_mock()
-    hass.states.async_set(SOC_SENSOR, "64", {"unit_of_measurement": "kW"})
-    hass.states.async_set(SOC_SENSOR, "unavailable")
+    hass.states.async_set(SOLAR, "6000", POWER_W)
     await hass.async_block_till_done()
     mock_client.ingest.assert_not_awaited()
-    assert coordinator.data.unusable == 2
-    # The production sensor's availability is untouched by the SoC sensor.
-    assert coordinator.data.source_available
-    assert hass.states.get("sensor.kilowattlas_shared_production").state == "4.2"
 
 
-async def test_battery_rating_refreshes_from_attributes(
-    hass: HomeAssistant,
-    init_integration_full: MockConfigEntry,
-    mock_client: MagicMock,
+async def test_disabled_channel_stops_and_forgets(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
 ) -> None:
-    """A changed rating on the SoC sensor reaches the next donor report."""
-    hass.states.async_set(
-        SOC_SENSOR,
-        "65",
-        {"unit_of_measurement": "%", "charge_peak_ac": 9.0, "discharge_peak_ac": 8.0},
+    """Switched off on the web: not sent, not declared, cursor forgotten."""
+    hass.states.async_set(GRID, "1.0", POWER_KW)
+    await hass.async_block_till_done()
+    coordinator = init_integration.runtime_data
+    assert "grid" in coordinator.cursors
+
+    mock_client.ingest.return_value = IngestResult(
+        accepted=1, config={"config_version": 2, "disabled_channels": ["grid"]}
     )
+    hass.states.async_set(SOLAR, "5000", POWER_W)
     await hass.async_block_till_done()
-    assert mock_client.ingest.await_args.kwargs["donor"]["battery_power_kw"] == 8.0
-    # Attributes gone: the last known rating is kept, not blanked.
-    hass.states.async_set(SOC_SENSOR, "66", {"unit_of_measurement": "%"})
+    assert "grid" not in coordinator.cursors
+
+    mock_client.ingest.reset_mock()
+    hass.states.async_set(GRID, "2.0", POWER_KW)
+    hass.states.async_set(SOLAR, "5100", POWER_W)
     await hass.async_block_till_done()
-    assert "battery_power_kw" not in mock_client.ingest.await_args.kwargs["donor"]
-    assert init_integration_full.runtime_data.data.battery_power_kw is None
+    assert values(mock_client, "grid") == []
+    decls = mock_client.ingest.await_args_list[-1].kwargs["channels"]
+    assert all(d["channel_key"] != "grid" for d in decls)
 
 
-async def test_rate_probe_classifies_minute_source(
-    hass: HomeAssistant,
-    freezer: FrozenDateTimeFactory,
-    init_integration_full: MockConfigEntry,
-    mock_client: MagicMock,
+async def test_energy_settings_change_is_followed(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_client: MagicMock
 ) -> None:
-    """A cloud-polled sensor writing once a minute is batch_15min, not inconclusive.
-
-    Only the production sensor is timed: the battery writing in between must
-    not make the site look faster than its production feed is.
-    """
-    freezer.tick(timedelta(seconds=61))
-    async_fire_time_changed(hass)
+    """A sensor removed from the Energy dashboard stops being shared."""
+    prefs = {**ENERGY_PREFS, "device_consumption": []}
+    await save_energy_prefs(hass, prefs)
+    coordinator = init_integration.runtime_data
+    assert DISHWASHER not in {c.entity_id for c in coordinator.channels}
+    hass.states.async_set(DISHWASHER, "2500", POWER_W)
     await hass.async_block_till_done()
-    for i in range(4):
-        freezer.tick(timedelta(seconds=30))
-        hass.states.async_set(BATTERY_SENSOR, str(i), {"unit_of_measurement": "kW"})
-        freezer.tick(timedelta(seconds=30))
-        hass.states.async_set(SENSOR, str(1 + i), {"unit_of_measurement": "kW"})
-        await hass.async_block_till_done()
-    freezer.tick(timedelta(seconds=61))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    assert init_integration_full.runtime_data.data.measured_sample_interval_seconds == 60.0
-    hass.states.async_set(SENSOR, "9", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-    donor = mock_client.ingest.await_args.kwargs["donor"]
-    assert donor["sample_capability"] == "batch_15min"
-    assert donor["measured_sample_interval_seconds"] == 60.0
+    assert values(mock_client, "device_sensor.dishwasher_energy") == []
 
 
-async def test_rate_probe_two_deltas_is_inconclusive(
+async def test_catch_up_from_recorder_after_restart(
     hass: HomeAssistant,
+    mock_client: MagicMock,
     freezer: FrozenDateTimeFactory,
+) -> None:
+    """What could not be sent before a restart comes from the recorder."""
+    set_states(hass)
+    await save_energy_prefs(hass, ENERGY_PREFS)
+    entry = await setup_entry(hass, energy_entry())
+
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set(SOLAR, "1000", POWER_W)
+    await hass.async_block_till_done()
+    assert values(mock_client) == [1.0]
+
+    # The server goes away; three readings cannot be sent.
+    mock_client.ingest.side_effect = KilowattlasConnectionError("down")
+    for watts in ("2000", "3000", "4000"):
+        freezer.tick(timedelta(seconds=5))
+        hass.states.async_set(SOLAR, watts, POWER_W)
+        await hass.async_block_till_done()
+    await async_wait_recording_done(hass)
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Home Assistant is back with the server reachable.
+    mock_client.ingest.side_effect = None
+    mock_client.ingest.reset_mock()
+    freezer.tick(timedelta(seconds=5))
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert values(mock_client) == [2.0, 3.0, 4.0]
+    assert not entry.runtime_data.replay_windows
+
+
+async def test_channel_absent_at_start_never_replays_its_gap(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A sensor removed while stopped: what it measured unshared stays home."""
+    key = "device_sensor.dishwasher_energy"
+    set_states(hass)
+    await save_energy_prefs(hass, ENERGY_PREFS)
+    entry = await setup_entry(hass, energy_entry())
+
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set(DISHWASHER, "1000", POWER_W)
+    await hass.async_block_till_done()
+    assert values(mock_client, key) == [1.0]
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    await save_energy_prefs(hass, {**ENERGY_PREFS, "device_consumption": []})
+    freezer.tick(timedelta(seconds=5))
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert key not in entry.runtime_data.cursors
+
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set(DISHWASHER, "2500", POWER_W)
+    await async_wait_recording_done(hass)
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    await save_energy_prefs(hass, ENERGY_PREFS)
+    mock_client.ingest.reset_mock()
+    freezer.tick(timedelta(seconds=5))
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert values(mock_client, key) == []
+
+
+async def test_long_outage_spills_to_recorder(
+    hass: HomeAssistant,
     init_integration: MockConfigEntry,
     mock_client: MagicMock,
+    freezer: FrozenDateTimeFactory,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fewer than three deltas never concludes (a cloudy night must not downgrade)."""
-    freezer.tick(timedelta(seconds=61))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    for i in range(3):
-        freezer.tick(timedelta(seconds=90))
-        hass.states.async_set(SENSOR, str(1 + i), {"unit_of_measurement": "kW"})
+    """Past the in-memory bound, readings wait in the recorder instead."""
+    monkeypatch.setattr("custom_components.kilowattlas.coordinator.MAX_QUEUE", 2)
+    coordinator = init_integration.runtime_data
+    mock_client.ingest.side_effect = KilowattlasConnectionError("down")
+    for watts in ("1000", "2000", "3000"):
+        freezer.tick(timedelta(seconds=1))  # well inside the first backoff
+        hass.states.async_set(SOLAR, watts, POWER_W)
         await hass.async_block_till_done()
-    freezer.tick(timedelta(seconds=301))
+    assert coordinator.queue_length == 0
+    assert "" in coordinator.replay_windows
+
+    # No waiting for the recorder here: the catch-up must do that itself, or
+    # it reads a short history and loses what was not committed yet.
+    mock_client.ingest.side_effect = None
+    mock_client.ingest.reset_mock()
+    freezer.tick(timedelta(seconds=RETRY_BASE_SECONDS * 4))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert values(mock_client) == [1.0, 2.0, 3.0]
+    assert not coordinator.replay_windows
+
+
+async def test_v3_queue_is_carried_over(
+    hass: HomeAssistant, mock_client: MagicMock, hass_storage: dict[str, Any]
+) -> None:
+    """Readings queued by 0.7.0 are sent once after the upgrade."""
+    hass_storage[f"{STORAGE_KEY}_entry1"] = {
+        "version": 3,
+        "minor_version": 1,
+        "key": f"{STORAGE_KEY}_entry1",
+        "data": {
+            "config": {"config_version": 1},
+            "queue": [{"ts": "2026-10-29T10:00:00.000000Z", "power_kw": 3.3}],
+            "legacy_measurements": [],
+            "measured_sample_interval_seconds": 5.0,
+        },
+    }
+    set_states(hass)
+    await save_energy_prefs(hass, ENERGY_PREFS)
+    entry = await setup_entry(hass, energy_entry())
+    assert values(mock_client) == [3.3]
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    stored = await Store(hass, 4, f"{STORAGE_KEY}_entry1").async_load()
+    assert stored["carried_queue"] == []
+    assert stored["measured_sample_interval_seconds"] == 5.0
+
+
+async def _run_probe(
+    hass: HomeAssistant,
+    coordinator: Any,
+    freezer: FrozenDateTimeFactory,
+    gaps: list[int],
+) -> None:
+    """Run one probe window with the first sensor writing after these gaps."""
+    coordinator._start_probe()
+    watts = 1000
+    for gap in gaps:
+        freezer.tick(timedelta(seconds=gap))
+        watts += 1
+        hass.states.async_set(SOLAR, str(watts), POWER_W)
+        await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=PROBE_WINDOW_SECONDS))
+    # Well past the window, whatever the loop's own clock has seen.
+    async_fire_time_changed(
+        hass, dt_util.utcnow() + timedelta(seconds=PROBE_WINDOW_SECONDS + 1)
+    )
+    await hass.async_block_till_done()
+
+
+async def test_rate_probe_takes_the_median(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """One long gap, as after a restart, does not skew the measured rate."""
+    coordinator = init_integration.runtime_data
+    await _run_probe(hass, coordinator, freezer, [5, 5, 5, 5, 200])
+    assert coordinator.data.measured_sample_interval_seconds == 5.0
+
+
+async def test_inconclusive_rate_probe_keeps_the_previous_rate(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A quiet window is not read as a slow sensor."""
+    coordinator = init_integration.runtime_data
+    await _run_probe(hass, coordinator, freezer, [5, 5, 5, 5])
+    assert coordinator.data.measured_sample_interval_seconds == 5.0
+    await _run_probe(hass, coordinator, freezer, [30])
+    assert coordinator.data.measured_sample_interval_seconds == 5.0
+
+
+async def test_rate_probe_restart_does_not_cut_a_running_window(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The daily restart leaves readings already seen in the window."""
+    coordinator = init_integration.runtime_data
+    coordinator._start_probe()
+    watts = 1000
+    for _ in range(3):
+        freezer.tick(timedelta(seconds=7))
+        watts += 1
+        hass.states.async_set(SOLAR, str(watts), POWER_W)
+        await hass.async_block_till_done()
+    coordinator._start_probe()
+    await _run_probe(hass, coordinator, freezer, [7, 7])
+    assert coordinator.data.measured_sample_interval_seconds == 7.0
+
+
+async def test_batches_are_bounded(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """No request carries more than MAX_SEND readings."""
+    mock_client.ingest.side_effect = KilowattlasConnectionError("down")
+    for i in range(MAX_SEND + 10):
+        freezer.tick(timedelta(milliseconds=10))
+        hass.states.async_set(SOLAR, str(1000 + i), POWER_W)
+    await hass.async_block_till_done()
+    mock_client.ingest.side_effect = None
+    mock_client.ingest.reset_mock()
+    freezer.tick(timedelta(seconds=RETRY_BASE_SECONDS + 1))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert init_integration.runtime_data.data.measured_sample_interval_seconds is None
+    sizes = [len(c.kwargs["samples"]) for c in mock_client.ingest.await_args_list]
+    assert sizes == [MAX_SEND, 10]

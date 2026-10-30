@@ -1,4 +1,4 @@
-"""Tests for the Kilowattlas config flow."""
+"""Tests for the Kilowattlas config and options flows."""
 
 from __future__ import annotations
 
@@ -16,22 +16,37 @@ from aiokilowattlas import (
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.kilowattlas.config_flow import manual_suggested
 from custom_components.kilowattlas.const import (
-    CONF_BATTERY_CHARGE_POSITIVE,
-    CONF_BATTERY_POWER_SENSOR,
-    CONF_BATTERY_SOC_SENSOR,
     CONF_CONSENT,
-    CONF_GRID_IMPORT_POSITIVE,
-    CONF_GRID_POWER_SENSOR,
-    CONF_POWER_SENSOR,
+    CONF_EXCLUDED,
+    CONF_KEY_OVERRIDES,
+    CONF_PREFERENCES,
     CONF_SITE_ID,
+    CONF_SOURCE,
     CONF_TOKEN,
     DOMAIN,
+    SOURCE_ENERGY,
+    SOURCE_MANUAL,
 )
 
-from .conftest import BATTERY_SENSOR, GRID_SENSOR, SENSOR, SITE_ID, SOC_SENSOR, TOKEN
+from .conftest import (
+    BATTERY,
+    DISHWASHER,
+    ENERGY_PREFS,
+    GRID_EXPORT,
+    GRID_IMPORT,
+    SITE_ID,
+    SOC,
+    SOLAR,
+    TOKEN,
+    energy_entry,
+    manual_entry,
+    save_energy_prefs,
+    set_states,
+    setup_entry,
+)
 
 pytestmark = pytest.mark.usefixtures("mock_client")
 
@@ -82,8 +97,29 @@ async def _finish_progress(hass: HomeAssistant, result: dict) -> dict:
     return await hass.config_entries.flow.async_configure(result["flow_id"])
 
 
-async def test_full_flow(hass: HomeAssistant, mock_client: MagicMock) -> None:
-    """Consent -> code shown with progress -> approved -> sensor -> entry."""
+def _manual(
+    grid: dict | None = None,
+    solar: dict | None = None,
+    battery: dict | None = None,
+    home: dict | None = None,
+    devices: dict | None = None,
+) -> dict:
+    """A manual form answer, shaped like the frontend sends it."""
+    return {
+        "grid": grid or {},
+        "solar": solar or {},
+        "battery": battery or {},
+        "home": home or {},
+        "devices": devices or {},
+    }
+
+
+async def test_full_flow_from_energy_settings(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """Consent -> link -> the Energy sensors, all ticked -> entry."""
+    set_states(hass)
+    await save_energy_prefs(hass, ENERGY_PREFS)
     mock_client.poll_token.side_effect = [
         AuthorizationPending,
         TokenGrant(token=TOKEN, site_id=SITE_ID),
@@ -92,17 +128,27 @@ async def test_full_flow(hass: HomeAssistant, mock_client: MagicMock) -> None:
     assert result["type"] is FlowResultType.SHOW_PROGRESS
     result = await _finish_progress(hass, result)
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "sensor"
+    assert result["step_id"] == "channels"
+    share = next(iter(result["data_schema"].schema))
+    assert share.default() == [
+        "",
+        "grid",
+        "battery",
+        "battery_soc",
+        "device_sensor.dishwasher_energy",
+    ]
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_POWER_SENSOR: SENSOR}
+        result["flow_id"], {"share": ["", "grid", "device_sensor.dishwasher_energy"]}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Kilowattlas"
-    assert result["data"] == {
-        CONF_TOKEN: TOKEN,
-        CONF_SITE_ID: SITE_ID,
-        CONF_POWER_SENSOR: SENSOR,
+    assert result["data"] == {CONF_TOKEN: TOKEN, CONF_SITE_ID: SITE_ID}
+    assert result["options"] == {
+        CONF_SOURCE: SOURCE_ENERGY,
+        CONF_PREFERENCES: {},
+        CONF_KEY_OVERRIDES: {},
+        CONF_EXCLUDED: ["battery", "battery_soc"],
     }
     assert result["result"].unique_id == str(SITE_ID)
 
@@ -110,7 +156,85 @@ async def test_full_flow(hass: HomeAssistant, mock_client: MagicMock) -> None:
     call = mock_client.request_device_code.await_args
     assert call.args == (hass.config.latitude, hass.config.longitude)
     assert call.kwargs["capability"]["sample_interval_seconds"] == 10
-    mock_client.poll_token.assert_awaited_with("dev-code")
+
+
+async def test_energy_missing_then_set_up(hass: HomeAssistant) -> None:
+    """Without Energy settings: set them up, check again, continue."""
+    result = await _finish_progress(hass, await _consent(hass))
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "energy_missing"
+    assert result["menu_options"] == ["channels", "manual"]
+
+    set_states(hass)
+    await save_energy_prefs(hass, ENERGY_PREFS)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "channels"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "channels"
+
+
+async def test_manual_sensors(hass: HomeAssistant) -> None:
+    """The Energy dashboard's power fields, entered here instead."""
+    set_states(hass)
+    hass.states.async_set(GRID_IMPORT, "0", {"unit_of_measurement": "W"})
+    hass.states.async_set(GRID_EXPORT, "0", {"unit_of_measurement": "W"})
+    result = await _finish_progress(hass, await _consent(hass))
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "manual"}
+    )
+    assert result["step_id"] == "manual"
+
+    # Two-sensor grid with one sensor missing: Energy's schema refuses it.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _manual(grid={"grid_mode": "two", "grid_power": GRID_IMPORT})
+    )
+    assert result["errors"] == {"grid": "invalid_power_config"}
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], _manual()
+    )
+    assert result["errors"] == {"base": "nothing_to_share"}
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        _manual(
+            grid={
+                "grid_mode": "two",
+                "grid_power": GRID_IMPORT,
+                "grid_power_to": GRID_EXPORT,
+            },
+            solar={"solar_power": SOLAR},
+            battery={
+                "battery_mode": "inverted",
+                "battery_power": BATTERY,
+                "battery_soc": SOC,
+                "battery_capacity": 9.6,
+            },
+            devices={"device_power": [DISHWASHER]},
+        ),
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"][CONF_SOURCE] == SOURCE_MANUAL
+    assert result["options"][CONF_PREFERENCES] == {
+        "energy_sources": [
+            {
+                "type": "grid",
+                "power_config": {
+                    "stat_rate_from": GRID_IMPORT,
+                    "stat_rate_to": GRID_EXPORT,
+                },
+            },
+            {"type": "solar", "stat_rate": SOLAR},
+            {
+                "type": "battery",
+                "power_config": {"stat_rate_inverted": BATTERY},
+                "stat_soc": SOC,
+                "capacity": 9.6,
+            },
+        ],
+        "device_consumption": [{"stat_rate": DISHWASHER, "name": "dishwasher power"}],
+    }
 
 
 async def test_consent_required(hass: HomeAssistant, mock_client: MagicMock) -> None:
@@ -148,8 +272,8 @@ async def test_pending_then_approved(
     ]
     result = await _consent(hass)
     result = await _finish_progress(hass, result)
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "sensor"
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "energy_missing"
     assert mock_client.poll_token.await_count == 3
 
 
@@ -196,21 +320,18 @@ async def test_poll_connection_error(
     assert result["reason"] == "cannot_connect"
 
 
-async def test_already_configured(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-) -> None:
+async def test_already_configured(hass: HomeAssistant) -> None:
     """Linking the same site twice is refused."""
-    mock_config_entry.add_to_hass(hass)
+    energy_entry().add_to_hass(hass)
     result = await _consent(hass)
     result = await _finish_progress(hass, result)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
 
 
-async def test_reauth(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: MagicMock
-) -> None:
+async def test_reauth(hass: HomeAssistant, mock_client: MagicMock) -> None:
     """Reauth approves a new link and updates token + site id in place."""
+    mock_config_entry = energy_entry()
     mock_config_entry.add_to_hass(hass)
     mock_client.poll_token.return_value = TokenGrant(token="kwc_new", site_id=SITE_ID)
     result = await mock_config_entry.start_reauth_flow(hass)
@@ -222,13 +343,12 @@ async def test_reauth(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
     assert mock_config_entry.data[CONF_TOKEN] == "kwc_new"
-    assert mock_config_entry.data[CONF_POWER_SENSOR] == SENSOR
+    assert mock_config_entry.options[CONF_SOURCE] == SOURCE_ENERGY
 
 
-async def test_reauth_wrong_site(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: MagicMock
-) -> None:
+async def test_reauth_wrong_site(hass: HomeAssistant, mock_client: MagicMock) -> None:
     """Approving a different installation during reauth is refused."""
+    mock_config_entry = energy_entry()
     mock_config_entry.add_to_hass(hass)
     mock_client.poll_token.return_value = TokenGrant(token="kwc_other", site_id=99)
     result = await mock_config_entry.start_reauth_flow(hass)
@@ -239,119 +359,91 @@ async def test_reauth_wrong_site(
     assert mock_config_entry.data[CONF_TOKEN] == TOKEN
 
 
-async def test_reconfigure(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-) -> None:
-    """Reconfigure swaps the sensor without re-linking."""
-    mock_config_entry.add_to_hass(hass)
-    result = await mock_config_entry.start_reconfigure_flow(hass)
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "reconfigure"
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_POWER_SENSOR: "sensor.other"}
-    )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "reconfigure_successful"
-    assert mock_config_entry.data[CONF_POWER_SENSOR] == "sensor.other"
-    assert mock_config_entry.data[CONF_TOKEN] == TOKEN
-
-
-async def test_full_flow_with_battery_and_grid(
+async def test_options_choose_energy_channels(
     hass: HomeAssistant, mock_client: MagicMock
 ) -> None:
-    """All four sensors and both sign flags are stored; flags only when set."""
-    result = await _consent(hass)
-    result = await _finish_progress(hass, result)
-    assert result["step_id"] == "sensor"
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {
-            CONF_POWER_SENSOR: SENSOR,
-            CONF_BATTERY_POWER_SENSOR: BATTERY_SENSOR,
-            CONF_GRID_POWER_SENSOR: GRID_SENSOR,
-            CONF_BATTERY_SOC_SENSOR: SOC_SENSOR,
-            CONF_BATTERY_CHARGE_POSITIVE: True,
-            CONF_GRID_IMPORT_POSITIVE: False,
-        },
+    """The options reopen the channel list, remembering what was left out."""
+    set_states(hass)
+    await save_energy_prefs(hass, ENERGY_PREFS)
+    entry = await setup_entry(hass, energy_entry(excluded_channels=["grid"]))
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "channels"}
+    )
+    share = next(iter(result["data_schema"].schema))
+    assert "grid" not in share.default()
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"share": ["grid"]}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"] == {
-        CONF_TOKEN: TOKEN,
-        CONF_SITE_ID: SITE_ID,
-        CONF_POWER_SENSOR: SENSOR,
-        CONF_BATTERY_POWER_SENSOR: BATTERY_SENSOR,
-        CONF_GRID_POWER_SENSOR: GRID_SENSOR,
-        CONF_BATTERY_SOC_SENSOR: SOC_SENSOR,
-        CONF_BATTERY_CHARGE_POSITIVE: True,
-    }
+    await hass.async_block_till_done()
+    assert entry.options[CONF_EXCLUDED] == [
+        "",
+        "battery",
+        "battery_soc",
+        "device_sensor.dishwasher_energy",
+    ]
+    assert [c.key for c in entry.runtime_data.channels] == ["grid"]
 
 
-async def test_sign_flag_without_its_sensor_is_dropped(
+async def test_options_manual_keeps_overrides(
     hass: HomeAssistant, mock_client: MagicMock
 ) -> None:
-    """A flag for a sensor that was not chosen means nothing and is not stored."""
-    result = await _consent(hass)
-    result = await _finish_progress(hass, result)
-    result = await hass.config_entries.flow.async_configure(
+    """Editing manual sensors keeps the pre-1.0.0 channel keys."""
+    prefs = {
+        "energy_sources": [{"type": "solar", "stat_rate": SOLAR}],
+        "device_consumption": [{"stat_rate": DISHWASHER, "name": "EV"}],
+    }
+    set_states(hass)
+    entry = await setup_entry(
+        hass,
+        manual_entry(
+            prefs, key_overrides={DISHWASHER: ["ev_charger", "ev_charger_power"]}
+        ),
+    )
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    # No Energy settings: straight to the manual form, prefilled.
+    assert result["step_id"] == "manual"
+    result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {CONF_POWER_SENSOR: SENSOR, CONF_GRID_IMPORT_POSITIVE: True},
+        _manual(solar={"solar_power": SOLAR}, devices={"device_power": [DISHWASHER]}),
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"] == {
-        CONF_TOKEN: TOKEN,
-        CONF_SITE_ID: SITE_ID,
-        CONF_POWER_SENSOR: SENSOR,
+    await hass.async_block_till_done()
+    keys = {c.key: c.kind for c in entry.runtime_data.channels}
+    assert keys == {"": "gross_production", "ev_charger": "ev_charger_power"}
+
+
+def test_manual_form_is_prefilled_from_preferences() -> None:
+    """Stored preferences show up again in the form."""
+    prefs = {
+        "energy_sources": [
+            {"type": "grid", "power_config": {"stat_rate_inverted": "sensor.g"}},
+            {
+                "type": "battery",
+                "power_config": {
+                    "stat_rate_from": "sensor.o",
+                    "stat_rate_to": "sensor.i",
+                },
+                "stat_soc": "sensor.s",
+                "capacity": 5.0,
+            },
+            {"type": "solar", "stat_rate": "sensor.p"},
+            {"type": "home", "stat_rate": "sensor.h"},
+        ],
+        "device_consumption": [{"stat_rate": "sensor.d"}],
     }
-
-
-async def test_reconfigure_adds_battery(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry
-) -> None:
-    """A production-only entry gains a battery channel."""
-    mock_config_entry.add_to_hass(hass)
-    result = await mock_config_entry.start_reconfigure_flow(hass)
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {
-            CONF_POWER_SENSOR: SENSOR,
-            CONF_BATTERY_POWER_SENSOR: BATTERY_SENSOR,
-            CONF_BATTERY_SOC_SENSOR: SOC_SENSOR,
+    assert manual_suggested(prefs) == {
+        "grid": {"grid_mode": "inverted", "grid_power": "sensor.g"},
+        "solar": {"solar_power": "sensor.p"},
+        "battery": {
+            "battery_mode": "two",
+            "battery_power": "sensor.o",
+            "battery_power_to": "sensor.i",
+            "battery_soc": "sensor.s",
+            "battery_capacity": 5.0,
         },
-    )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "reconfigure_successful"
-    assert mock_config_entry.data == {
-        CONF_TOKEN: TOKEN,
-        CONF_SITE_ID: SITE_ID,
-        CONF_POWER_SENSOR: SENSOR,
-        CONF_BATTERY_POWER_SENSOR: BATTERY_SENSOR,
-        CONF_BATTERY_SOC_SENSOR: SOC_SENSOR,
-    }
-
-
-async def test_reconfigure_removes_optional_sensors(
-    hass: HomeAssistant, mock_config_entry_full: MockConfigEntry
-) -> None:
-    """Clearing the optional sensors removes them and their sign flags."""
-    mock_config_entry_full.add_to_hass(hass)
-    result = await mock_config_entry_full.start_reconfigure_flow(hass)
-    assert result["type"] is FlowResultType.FORM
-    # The form is prefilled with what is shared today.
-    suggested = {
-        k.description["suggested_value"]
-        for k in result["data_schema"].schema
-        if isinstance(k.description, dict) and "suggested_value" in k.description
-    }
-    assert {SENSOR, BATTERY_SENSOR, GRID_SENSOR, SOC_SENSOR, True} <= suggested
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {CONF_POWER_SENSOR: SENSOR, CONF_GRID_POWER_SENSOR: GRID_SENSOR},
-    )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "reconfigure_successful"
-    assert mock_config_entry_full.data == {
-        CONF_TOKEN: TOKEN,
-        CONF_SITE_ID: SITE_ID,
-        CONF_POWER_SENSOR: SENSOR,
-        CONF_GRID_POWER_SENSOR: GRID_SENSOR,
+        "home": {"home_power": "sensor.h"},
+        "devices": {"device_power": ["sensor.d"]},
     }

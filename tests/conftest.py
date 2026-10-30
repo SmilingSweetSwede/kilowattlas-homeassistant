@@ -3,31 +3,95 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiokilowattlas import DeviceCode, IngestResult, SiteInfo, TokenGrant
+from homeassistant.components.energy.data import async_get_manager
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.kilowattlas.const import (
-    CONF_BATTERY_POWER_SENSOR,
-    CONF_BATTERY_SOC_SENSOR,
-    CONF_GRID_IMPORT_POSITIVE,
-    CONF_GRID_POWER_SENSOR,
-    CONF_POWER_SENSOR,
+    CONF_EXCLUDED,
+    CONF_KEY_OVERRIDES,
+    CONF_PREFERENCES,
     CONF_SITE_ID,
+    CONF_SOURCE,
     CONF_TOKEN,
     DOMAIN,
+    SOURCE_ENERGY,
+    SOURCE_MANUAL,
 )
 
 TOKEN = "kwc_testtoken"
 SITE_ID = 42
-SENSOR = "sensor.solar_power"
-BATTERY_SENSOR = "sensor.checkwatt_battery_power"
-GRID_SENSOR = "sensor.checkwatt_grid_power"
-SOC_SENSOR = "sensor.checkwatt_battery_soc"
+SOLAR = "sensor.solar_power"
+GRID = "sensor.grid_power"
+GRID_IMPORT = "sensor.p1_power_import"
+GRID_EXPORT = "sensor.p1_power_export"
+BATTERY = "sensor.battery_power"
+SOC = "sensor.battery_soc"
+HOME = "sensor.home_power"
+DISHWASHER = "sensor.dishwasher_power"
+DISHWASHER_ENERGY = "sensor.dishwasher_energy"
+
+POWER_W = {"unit_of_measurement": "W", "device_class": "power"}
+POWER_KW = {"unit_of_measurement": "kW", "device_class": "power"}
+PERCENT = {"unit_of_measurement": "%", "device_class": "battery"}
+
+# A home's Energy settings: solar, grid (import positive), a battery with a
+# state of charge, a home meter and one device. Energy fields are left out
+# where the schema allows; the power fields are what Kilowattlas reads.
+ENERGY_PREFS: dict[str, Any] = {
+    "energy_sources": [
+        {
+            "type": "solar",
+            "stat_energy_from": "sensor.solar_energy",
+            "stat_rate": SOLAR,
+            "config_entry_solar_forecast": None,
+        },
+        {
+            "type": "grid",
+            "stat_energy_from": "sensor.grid_import_energy",
+            "stat_energy_to": "sensor.grid_export_energy",
+            "stat_cost": None,
+            "entity_energy_price": None,
+            "number_energy_price": None,
+            "stat_compensation": None,
+            "entity_energy_price_export": None,
+            "number_energy_price_export": None,
+            "cost_adjustment_day": 0.0,
+            "power_config": {"stat_rate": GRID},
+        },
+        {
+            "type": "battery",
+            "stat_energy_from": "sensor.battery_out_energy",
+            "stat_energy_to": "sensor.battery_in_energy",
+            "power_config": {"stat_rate": BATTERY},
+            "stat_soc": SOC,
+            "capacity": 10.0,
+        },
+    ],
+    "device_consumption": [
+        {
+            "stat_consumption": DISHWASHER_ENERGY,
+            "stat_rate": DISHWASHER,
+            "name": "Dishwasher",
+        }
+    ],
+}
+
+
+@pytest.fixture
+def mock_recorder_before_hass(async_test_recorder: Any) -> None:
+    """Prepare the test recorder before `hass` exists (pytest-homeassistant hook)."""
+
+
+@pytest.fixture(autouse=True)
+def auto_recorder(recorder_mock: Any) -> None:
+    """An in-memory recorder; the integration depends on it."""
 
 
 @pytest.fixture(autouse=True)
@@ -69,85 +133,76 @@ def mock_client() -> Generator[MagicMock]:
         yield client
 
 
-@pytest.fixture
-def mock_config_entry() -> MockConfigEntry:
-    """A linked installation."""
+def set_states(hass: HomeAssistant) -> None:
+    """Every sensor of ENERGY_PREFS, with a value."""
+    hass.states.async_set(SOLAR, "4200", POWER_W)
+    hass.states.async_set(GRID, "-0.9", POWER_KW)
+    hass.states.async_set(BATTERY, "1.5", POWER_KW)
+    hass.states.async_set(SOC, "64", PERCENT)
+    hass.states.async_set(HOME, "1.1", POWER_KW)
+    hass.states.async_set(DISHWASHER, "1800", POWER_W)
+
+
+async def save_energy_prefs(hass: HomeAssistant, prefs: dict[str, Any]) -> None:
+    """Save Energy settings the way the Energy dashboard does."""
+    await async_setup_component(hass, "energy", {})
+    manager = await async_get_manager(hass)
+    await manager.async_update(prefs)  # type: ignore[arg-type]
+    await hass.async_block_till_done()
+
+
+def energy_entry(**options: Any) -> MockConfigEntry:
+    """A linked installation sharing from the Energy settings."""
     return MockConfigEntry(
         domain=DOMAIN,
         title="Kilowattlas",
         unique_id=str(SITE_ID),
-        data={CONF_TOKEN: TOKEN, CONF_SITE_ID: SITE_ID, CONF_POWER_SENSOR: SENSOR},
+        version=2,
+        data={CONF_TOKEN: TOKEN, CONF_SITE_ID: SITE_ID},
+        options={
+            CONF_SOURCE: SOURCE_ENERGY,
+            CONF_PREFERENCES: {},
+            CONF_KEY_OVERRIDES: {},
+            CONF_EXCLUDED: [],
+            **options,
+        },
         entry_id="entry1",
     )
 
 
-@pytest.fixture
-def mock_config_entry_full() -> MockConfigEntry:
-    """A linked installation sharing production, battery, grid and SoC.
-
-    The grid sensor reports import as positive (CheckWatt-style, unconfirmed),
-    the battery sensor already follows Kilowattlas' sign convention.
-    """
+def manual_entry(prefs: dict[str, Any], **options: Any) -> MockConfigEntry:
+    """A linked installation sharing sensors entered in the options."""
     return MockConfigEntry(
         domain=DOMAIN,
         title="Kilowattlas",
         unique_id=str(SITE_ID),
-        data={
-            CONF_TOKEN: TOKEN,
-            CONF_SITE_ID: SITE_ID,
-            CONF_POWER_SENSOR: SENSOR,
-            CONF_BATTERY_POWER_SENSOR: BATTERY_SENSOR,
-            CONF_GRID_POWER_SENSOR: GRID_SENSOR,
-            CONF_BATTERY_SOC_SENSOR: SOC_SENSOR,
-            CONF_GRID_IMPORT_POSITIVE: True,
+        version=2,
+        data={CONF_TOKEN: TOKEN, CONF_SITE_ID: SITE_ID},
+        options={
+            CONF_SOURCE: SOURCE_MANUAL,
+            CONF_PREFERENCES: prefs,
+            CONF_KEY_OVERRIDES: {},
+            CONF_EXCLUDED: [],
+            **options,
         },
-        entry_id="entry_full",
+        entry_id="entry_manual",
     )
 
 
-@pytest.fixture
-async def init_integration_full(
-    hass: HomeAssistant,
-    mock_config_entry_full: MockConfigEntry,
-    mock_client: MagicMock,
-) -> AsyncGenerator[MockConfigEntry]:
-    """Set the four-sensor integration up with all sensors present."""
+async def setup_entry(hass: HomeAssistant, entry: MockConfigEntry) -> MockConfigEntry:
+    """Add and set up an entry."""
     await async_setup_component(hass, "homeassistant", {})
-    hass.states.async_set(
-        SENSOR, "4200", {"unit_of_measurement": "W", "device_class": "power"}
-    )
-    hass.states.async_set(
-        BATTERY_SENSOR, "-1.5", {"unit_of_measurement": "kW", "device_class": "power"}
-    )
-    hass.states.async_set(
-        GRID_SENSOR, "0.9", {"unit_of_measurement": "kW", "device_class": "power"}
-    )
-    hass.states.async_set(
-        SOC_SENSOR,
-        "64",
-        {
-            "unit_of_measurement": "%",
-            "device_class": "battery",
-            "charge_peak_ac": 5.0,
-            "discharge_peak_ac": 7.5,
-        },
-    )
-    mock_config_entry_full.add_to_hass(hass)
-    await hass.config_entries.async_setup(mock_config_entry_full.entry_id)
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    yield mock_config_entry_full
+    return entry
 
 
 @pytest.fixture
 async def init_integration(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: MagicMock
+    hass: HomeAssistant, mock_client: MagicMock
 ) -> AsyncGenerator[MockConfigEntry]:
-    """Set the integration up with a fake 4.2 kW solar sensor present."""
-    await async_setup_component(hass, "homeassistant", {})
-    hass.states.async_set(
-        SENSOR, "4200", {"unit_of_measurement": "W", "device_class": "power"}
-    )
-    mock_config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
-    yield mock_config_entry
+    """Linked, sharing the full ENERGY_PREFS home."""
+    set_states(hass)
+    await save_energy_prefs(hass, ENERGY_PREFS)
+    yield await setup_entry(hass, energy_entry())

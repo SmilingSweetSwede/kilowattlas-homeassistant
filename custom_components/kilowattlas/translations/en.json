@@ -2,62 +2,105 @@
   "config": {
     "step": {
       "user": {
-        "title": "Share your solar production on the Kilowattlas map",
-        "description": "Kilowattlas is a free, public, live map of solar production built from readings shared by homes like yours. This integration is open source and sends only what is listed here.\n\n**What is sent and shown**\n\n- Your Home Assistant home position is sent once, as a suggestion for where the installation is. You confirm or adjust it on the website before anything is shown.\n- The installation's position, capacity and live production are shown publicly on kilowattlas.com, without your name, account or e-mail.\n- Every reading from the power sensor you choose is sent as your sensor reports it. If you also choose a battery power, grid power or battery state-of-charge sensor, their readings are sent the same way and shown with your installation. Nothing else from Home Assistant is sent.\n\n**What the data is used for**\n\n- The public map and your own production history.\n- Comparing how your installation performs against similar installations.\n\nAny other use of your data, for example fault alerts through a service partner or aggregated data for electricity-market forecasting, will be a separate choice you make on the website. It is never switched on by this integration.\n\nYou can stop at any time: remove this integration, then delete the installation on kilowattlas.com to erase its history.",
+        "title": "Share your energy data with Kilowattlas",
+        "description": "Kilowattlas is a public map of home energy production and an energy-sharing service. This integration sends the readings of the power sensors in your Energy dashboard to kilowattlas.com as soon as they are measured, and nothing else.\n\n- Your home position is sent once as a suggestion; you confirm it on the website.\n- Solar and battery are shown publicly on the map, at about 100 m precision, without your name. Grid, home and individual device power are visible only to you.\n- You can change this per channel on kilowattlas.com, and stop at any time by removing this integration and deleting the installation on the website.",
         "data": {
-          "consent": "I agree that my installation's position, capacity, live production and, if I choose to share them, battery and grid flow are shown publicly on kilowattlas.com"
+          "consent": "I agree that my Energy dashboard's power readings are sent to Kilowattlas and shown as described above"
         },
         "data_description": {
-          "consent": "Required to continue. Covers the public map only."
+          "consent": "Required to continue."
         }
       },
       "link": {
         "title": "Approve the link",
         "description": "Open this page, sign in and approve the link:\n\n{verification_uri}\n\nYour code: **{user_code}**\n\nThis dialog continues automatically once you have approved it."
       },
-      "sensor": {
-        "title": "Choose your sensors",
-        "description": "Select the power sensor that reports your solar production (in W, kW or MW). A battery or grid sensor is optional: leave it empty to share production only.",
+      "channels": {
+        "title": "Choose what to share",
+        "description": "These power sensors are set up in your Energy dashboard. Untick any you do not want to share. Sensors you add to the Energy dashboard later are shared too; you can change this here at any time, and switch each channel off on kilowattlas.com.",
         "data": {
-          "power_sensor": "Solar power sensor",
-          "battery_power_sensor": "Battery power sensor (optional)",
-          "grid_power_sensor": "Grid power sensor (optional)",
-          "battery_soc_sensor": "Battery state of charge (optional)",
-          "battery_charge_positive": "Battery sensor shows charging as positive",
-          "grid_import_positive": "Grid sensor shows import as positive"
-        },
-        "data_description": {
-          "power_sensor": "Pick the inverter or meter sensor that reports production, not household consumption.",
-          "battery_power_sensor": "Power into or out of your home battery. Kilowattlas counts discharge (power out of the battery) as positive; tick the box below if your sensor does the opposite.",
-          "grid_power_sensor": "Power at your grid connection (P1/HAN meter or energy system). Kilowattlas counts export as positive; tick the box below if your sensor does the opposite.",
-          "battery_soc_sensor": "Your battery's state of charge in percent. Its rated power is read from the sensor's attributes when available.",
-          "battery_charge_positive": "Leave off if positive values mean the battery is discharging.",
-          "grid_import_positive": "Leave off if positive values mean you are exporting to the grid."
+          "share": "Share"
+        }
+      },
+      "energy_missing": {
+        "title": "Set up the Energy dashboard",
+        "description": "Kilowattlas shares the power sensors of your Energy dashboard, and none are set up yet. Add them under **Settings → Dashboards → Energy** (the power fields of grid, solar, battery, home and individual devices), then check again. Or enter the same sensors here.",
+        "menu_options": {
+          "channels": "I have set up the Energy dashboard, check again",
+          "manual": "Enter the sensors here instead"
+        }
+      },
+      "manual": {
+        "title": "Enter your sensors",
+        "description": "The same power settings as the Energy dashboard. Fill in what you have; everything is optional, but at least one sensor is needed.",
+        "sections": {
+          "grid": {
+            "name": "Grid",
+            "description": "The power at your grid connection, as in the Energy dashboard's grid settings.",
+            "data": {
+              "grid_mode": "Sensor type",
+              "grid_power": "Grid power",
+              "grid_power_to": "Power to the grid"
+            },
+            "data_description": {
+              "grid_mode": "One sensor that is positive when you import from the grid; one sensor that is positive when you export (inverted); or two sensors, one for import and one for export.",
+              "grid_power": "With two sensors: the power taken from the grid.",
+              "grid_power_to": "Only with two sensors: the power returned to the grid."
+            }
+          },
+          "solar": {
+            "name": "Solar",
+            "description": "The power your solar panels produce.",
+            "data": {
+              "solar_power": "Solar power"
+            },
+            "data_description": {
+              "solar_power": "Positive while the panels produce."
+            }
+          },
+          "battery": {
+            "name": "Battery",
+            "description": "Your home battery, as in the Energy dashboard's battery settings.",
+            "data": {
+              "battery_mode": "Sensor type",
+              "battery_power": "Battery power",
+              "battery_power_to": "Power into the battery",
+              "battery_soc": "State of charge",
+              "battery_capacity": "Usable capacity"
+            },
+            "data_description": {
+              "battery_mode": "One sensor that is positive when the battery discharges; one sensor that is positive when it charges (inverted); or two sensors, one for discharging and one for charging.",
+              "battery_power": "With two sensors: the power out of the battery.",
+              "battery_power_to": "Only with two sensors: the power into the battery.",
+              "battery_soc": "In percent.",
+              "battery_capacity": "Optional."
+            }
+          },
+          "home": {
+            "name": "Home",
+            "description": "The power the whole home uses, as in the Energy dashboard's home settings.",
+            "data": {
+              "home_power": "Home power"
+            },
+            "data_description": {
+              "home_power": "Positive; measured at the main panel."
+            }
+          },
+          "devices": {
+            "name": "Individual devices",
+            "description": "Devices you also track in the Energy dashboard, such as an EV charger or a heat pump.",
+            "data": {
+              "device_power": "Device power sensors"
+            },
+            "data_description": {
+              "device_power": "One sensor per device; positive while it draws power."
+            }
+          }
         }
       },
       "reauth_confirm": {
         "title": "Re-link Kilowattlas",
         "description": "Kilowattlas no longer accepts the link for this installation. Approve a new link on the website to continue sharing."
-      },
-      "reconfigure": {
-        "title": "Change the shared sensors",
-        "description": "Choose the sensors to share. Clear an optional sensor to stop sharing it. Readings already queued are kept.",
-        "data": {
-          "power_sensor": "Solar power sensor",
-          "battery_power_sensor": "Battery power sensor (optional)",
-          "grid_power_sensor": "Grid power sensor (optional)",
-          "battery_soc_sensor": "Battery state of charge (optional)",
-          "battery_charge_positive": "Battery sensor shows charging as positive",
-          "grid_import_positive": "Grid sensor shows import as positive"
-        },
-        "data_description": {
-          "power_sensor": "Pick the inverter or meter sensor that reports production, not household consumption.",
-          "battery_power_sensor": "Power into or out of your home battery. Kilowattlas counts discharge (power out of the battery) as positive; tick the box below if your sensor does the opposite.",
-          "grid_power_sensor": "Power at your grid connection (P1/HAN meter or energy system). Kilowattlas counts export as positive; tick the box below if your sensor does the opposite.",
-          "battery_soc_sensor": "Your battery's state of charge in percent. Its rated power is read from the sensor's attributes when available.",
-          "battery_charge_positive": "Leave off if positive values mean the battery is discharging.",
-          "grid_import_positive": "Leave off if positive values mean you are exporting to the grid."
-        }
       }
     },
     "progress": {
@@ -65,22 +108,136 @@
     },
     "error": {
       "cannot_connect": "Failed to connect",
-      "consent_required": "You need to agree to the public map before the integration can share your production."
+      "consent_required": "You need to agree before the integration can share your readings.",
+      "invalid_power_config": "With two sensors, choose both of them.",
+      "nothing_to_share": "Choose at least one sensor."
     },
     "abort": {
       "already_configured": "Service is already configured",
       "cannot_connect": "Failed to connect",
       "expired": "The linking code expired before it was approved. Start over to get a new code.",
       "reauth_successful": "Re-authentication was successful",
-      "reconfigure_successful": "Re-configuration was successful",
       "unique_id_mismatch": "The approved link belongs to a different installation than the one being re-linked."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "What to share",
+        "menu_options": {
+          "channels": "Share from the Energy dashboard",
+          "manual": "Enter the sensors here instead"
+        }
+      },
+      "channels": {
+        "title": "Choose what to share",
+        "description": "These power sensors are set up in your Energy dashboard. Untick any you do not want to share. Sensors you add to the Energy dashboard later are shared too; you can change this here at any time, and switch each channel off on kilowattlas.com.",
+        "data": {
+          "share": "Share"
+        }
+      },
+      "manual": {
+        "title": "Enter your sensors",
+        "description": "The same power settings as the Energy dashboard. Fill in what you have; everything is optional, but at least one sensor is needed.",
+        "sections": {
+          "grid": {
+            "name": "Grid",
+            "description": "The power at your grid connection, as in the Energy dashboard's grid settings.",
+            "data": {
+              "grid_mode": "Sensor type",
+              "grid_power": "Grid power",
+              "grid_power_to": "Power to the grid"
+            },
+            "data_description": {
+              "grid_mode": "One sensor that is positive when you import from the grid; one sensor that is positive when you export (inverted); or two sensors, one for import and one for export.",
+              "grid_power": "With two sensors: the power taken from the grid.",
+              "grid_power_to": "Only with two sensors: the power returned to the grid."
+            }
+          },
+          "solar": {
+            "name": "Solar",
+            "description": "The power your solar panels produce.",
+            "data": {
+              "solar_power": "Solar power"
+            },
+            "data_description": {
+              "solar_power": "Positive while the panels produce."
+            }
+          },
+          "battery": {
+            "name": "Battery",
+            "description": "Your home battery, as in the Energy dashboard's battery settings.",
+            "data": {
+              "battery_mode": "Sensor type",
+              "battery_power": "Battery power",
+              "battery_power_to": "Power into the battery",
+              "battery_soc": "State of charge",
+              "battery_capacity": "Usable capacity"
+            },
+            "data_description": {
+              "battery_mode": "One sensor that is positive when the battery discharges; one sensor that is positive when it charges (inverted); or two sensors, one for discharging and one for charging.",
+              "battery_power": "With two sensors: the power out of the battery.",
+              "battery_power_to": "Only with two sensors: the power into the battery.",
+              "battery_soc": "In percent.",
+              "battery_capacity": "Optional."
+            }
+          },
+          "home": {
+            "name": "Home",
+            "description": "The power the whole home uses, as in the Energy dashboard's home settings.",
+            "data": {
+              "home_power": "Home power"
+            },
+            "data_description": {
+              "home_power": "Positive; measured at the main panel."
+            }
+          },
+          "devices": {
+            "name": "Individual devices",
+            "description": "Devices you also track in the Energy dashboard, such as an EV charger or a heat pump.",
+            "data": {
+              "device_power": "Device power sensors"
+            },
+            "data_description": {
+              "device_power": "One sensor per device; positive while it draws power."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "invalid_power_config": "With two sensors, choose both of them.",
+      "nothing_to_share": "Choose at least one sensor."
+    }
+  },
+  "selector": {
+    "power_mode": {
+      "options": {
+        "single": "One sensor",
+        "inverted": "One sensor, inverted",
+        "two": "Two sensors"
+      }
+    }
+  },
+  "issues": {
+    "no_channels": {
+      "title": "Kilowattlas has nothing to share",
+      "description": "No power sensor is set up in your Energy dashboard. Add the power fields under **Settings → Dashboards → Energy**, or enter the sensors in the Kilowattlas options."
+    },
+    "use_energy_settings": {
+      "title": "Share from your Energy dashboard",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Share from your Energy dashboard",
+            "description": "Your Energy dashboard now has power sensors set up. Kilowattlas can share those instead of the sensors entered in its own options, so you keep one list in one place. Your channels and their history on kilowattlas.com stay as they are."
+          }
+        }
+      }
     }
   },
   "entity": {
     "sensor": {
-      "shared_production": {
-        "name": "Shared production"
-      },
       "sharing_status": {
         "name": "Sharing status",
         "state": {
@@ -89,6 +246,9 @@
           "retrying": "Connection error, retrying",
           "revoked": "Disconnected, access revoked"
         }
+      },
+      "shared_channels": {
+        "name": "Shared channels"
       },
       "last_sent": {
         "name": "Last sent"

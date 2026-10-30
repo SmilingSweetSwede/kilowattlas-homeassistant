@@ -1,17 +1,26 @@
 {
   "domain": "kilowattlas",
   "name": "Kilowattlas",
+  "after_dependencies": [
+    "frontend",
+    "http",
+    "panel_custom"
+  ],
   "codeowners": [
     "@SmilingSweetSwede"
   ],
   "config_flow": true,
+  "dependencies": [
+    "energy",
+    "recorder"
+  ],
   "documentation": "https://github.com/SmilingSweetSwede/kilowattlas-homeassistant",
   "integration_type": "service",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/SmilingSweetSwede/kilowattlas-homeassistant/issues",
   "quality_scale": "bronze",
   "requirements": [
-    "aiokilowattlas==0.2.0"
+    "aiokilowattlas==0.6.0"
   ],
-  "version": "0.5.0"
+  "version": "1.0.0"
 }

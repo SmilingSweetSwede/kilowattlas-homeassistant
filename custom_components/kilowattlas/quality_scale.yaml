@@ -5,7 +5,7 @@ rules:
     comment: The integration registers no actions.
   appropriate-polling:
     status: exempt
-    comment: Push-based; the coordinator subscribes to state changes and never polls.
+    comment: Push-based; the coordinator subscribes to state writes and never polls.
   brands: done
   common-modules: done
   config-flow: done
@@ -30,9 +30,7 @@ rules:
     status: exempt
     comment: The integration registers no actions.
   config-entry-unloading: done
-  docs-configuration-parameters:
-    status: exempt
-    comment: No options flow.
+  docs-configuration-parameters: done
   docs-installation-parameters: done
   entity-unavailable: done
   integration-owner: done
@@ -55,7 +53,7 @@ rules:
   docs-known-limitations: done
   docs-supported-devices:
     status: exempt
-    comment: Works with any power sensor, not specific devices.
+    comment: Works with any power sensor the Energy dashboard accepts, not specific devices.
   docs-supported-functions: done
   docs-troubleshooting: done
   docs-use-cases: done
@@ -68,8 +66,10 @@ rules:
   entity-translations: done
   exception-translations: todo
   icon-translations: done
-  reconfiguration-flow: done
-  repair-issues: todo
+  reconfiguration-flow:
+    status: exempt
+    comment: What is shared is changed in the options flow; the link itself is renewed by reauthentication.
+  repair-issues: done
   stale-devices:
     status: exempt
     comment: One service device per config entry.

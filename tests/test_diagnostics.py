@@ -9,42 +9,28 @@ from custom_components.kilowattlas.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
-from .conftest import BATTERY_SENSOR, SENSOR, TOKEN
+from .conftest import DISHWASHER, GRID, TOKEN
 
 
-async def test_diagnostics_redacts_token(
+async def test_diagnostics(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
+    """The token is redacted; the Energy mapping is visible."""
     diag = await async_get_config_entry_diagnostics(hass, init_integration)
     assert diag["entry"]["token"] == "**REDACTED**"
-    assert diag["entry"]["power_sensor"] == SENSOR
     assert TOKEN not in str(diag)
+    assert diag["options"]["source"] == "energy"
     assert diag["state"]["status"] == "connected"
     assert diag["server_config"]["slot_seconds"] == 900
+    channels = {c["key"]: c for c in diag["channels"]}
+    assert channels["grid"] == {
+        "key": "grid",
+        "kind": "grid_power",
+        "entity_id": GRID,
+        "name": None,
+        "percent": False,
+    }
+    assert channels["device_sensor.dishwasher_energy"]["entity_id"] == DISHWASHER
+    assert diag["cursors"] == {}
+    assert diag["replay_windows"] == {}
     assert diag["queue_length"] == 0
-    assert diag["channels"] == [
-        {
-            "entity_id": SENSOR,
-            "channel_key": "",
-            "kind": "gross_production",
-            "invert": False,
-            "percent": False,
-        }
-    ]
-    assert diag["state"]["battery_power_kw"] is None
-
-
-async def test_diagnostics_lists_every_channel(
-    hass: HomeAssistant, init_integration_full: MockConfigEntry
-) -> None:
-    diag = await async_get_config_entry_diagnostics(hass, init_integration_full)
-    assert TOKEN not in str(diag)
-    keys = [(c["channel_key"], c["kind"], c["invert"]) for c in diag["channels"]]
-    assert keys == [
-        ("", "gross_production", False),
-        ("battery", "battery_power", False),
-        ("grid", "net_export", True),
-        ("battery_soc", "battery_soc", False),
-    ]
-    assert diag["channels"][1]["entity_id"] == BATTERY_SENSOR
-    assert diag["state"]["battery_power_kw"] == 5.0

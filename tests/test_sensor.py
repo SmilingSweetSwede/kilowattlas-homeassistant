@@ -2,27 +2,25 @@
 
 from __future__ import annotations
 
-from homeassistant.const import ATTR_DEVICE_CLASS, ATTR_UNIT_OF_MEASUREMENT
+import importlib
+from unittest.mock import MagicMock
+
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.kilowattlas.const import DOMAIN
+from custom_components.kilowattlas import const
+from custom_components.kilowattlas.const import CONF_PREFERENCES, DOMAIN
 
-from .conftest import SENSOR
+from .conftest import BATTERY, POWER_KW, manual_entry, setup_entry
 
 
 async def test_entities_and_device(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
-    """Entities are grouped under one service device with a map link."""
-    prod = hass.states.get("sensor.kilowattlas_shared_production")
-    assert prod is not None
-    assert prod.state == "4.2"  # 4200 W at setup
-    assert prod.attributes[ATTR_UNIT_OF_MEASUREMENT] == "kW"
-    assert prod.attributes[ATTR_DEVICE_CLASS] == "power"
-
+    """Status entities are grouped under one service device with a map link."""
     status = hass.states.get("sensor.kilowattlas_sharing_status")
     assert status.state == "connected"
     assert status.attributes["options"] == [
@@ -31,10 +29,9 @@ async def test_entities_and_device(
         "retrying",
         "revoked",
     ]
+    assert hass.states.get("sensor.kilowattlas_shared_channels").state == "5"
 
     registry = er.async_get(hass)
-    entry = registry.async_get("sensor.kilowattlas_shared_production")
-    assert entry.unique_id == f"{init_integration.entry_id}_shared_production"
     # Disabled by default: the noisy diagnostics.
     for entity_id in (
         "sensor.kilowattlas_unusable_readings",
@@ -46,25 +43,56 @@ async def test_entities_and_device(
         )
         assert hass.states.get(entity_id) is None
 
-    device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, init_integration.entry_id)}
+    (device,) = dr.async_entries_for_config_entry(
+        dr.async_get(hass), init_integration.entry_id
     )
+    assert device.identifiers == {(DOMAIN, init_integration.entry_id)}
     assert device.entry_type is dr.DeviceEntryType.SERVICE
     assert device.configuration_url.startswith("https://kilowattlas.com/?lat=")
 
 
-async def test_production_unavailable_when_source_is(
-    hass: HomeAssistant, init_integration: MockConfigEntry
+def test_map_base_url_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """KILOWATTLAS_MAP_BASE points the Visit link elsewhere; blank means default."""
+    try:
+        monkeypatch.setenv("KILOWATTLAS_MAP_BASE", " http://localhost:3500/ ")
+        assert importlib.reload(const).MAP_BASE_URL == "http://localhost:3500"
+        monkeypatch.setenv("KILOWATTLAS_MAP_BASE", "  ")
+        assert importlib.reload(const).MAP_BASE_URL == "https://kilowattlas.com"
+    finally:
+        monkeypatch.delenv("KILOWATTLAS_MAP_BASE", raising=False)
+        importlib.reload(const)
+    assert const.MAP_BASE_URL == "https://kilowattlas.com"
+
+
+async def test_transform_sensor_follows_the_options(
+    hass: HomeAssistant, mock_client: MagicMock
 ) -> None:
-    """The production sensor mirrors the source's availability."""
-    hass.states.async_set(SENSOR, "unavailable")
+    """Energy's transform sensor exists while the options need it, not after."""
+    prefs = {
+        "energy_sources": [
+            {"type": "battery", "power_config": {"stat_rate_inverted": BATTERY}}
+        ],
+        "device_consumption": [],
+    }
+    hass.states.async_set(BATTERY, "2", POWER_KW)  # charging, in its own sign
+    entry = await setup_entry(hass, manual_entry(prefs))
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, "entry_manual_battery_0_power"
+    )
+    assert entity_id == "sensor.kilowattlas_battery_power_inverted"
+    assert hass.states.get(entity_id).state == "-2.0"
+
+    plain = {
+        "energy_sources": [{"type": "battery", "power_config": {"stat_rate": BATTERY}}],
+        "device_consumption": [],
+    }
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_PREFERENCES: plain}
+    )
     await hass.async_block_till_done()
     assert (
-        hass.states.get("sensor.kilowattlas_shared_production").state == "unavailable"
+        registry.async_get_entity_id("sensor", DOMAIN, "entry_manual_battery_0_power")
+        is None
     )
-    # Diagnostics stay available.
-    assert hass.states.get("sensor.kilowattlas_sharing_status").state == "connected"
-
-    hass.states.async_set(SENSOR, "2.5", {"unit_of_measurement": "kW"})
-    await hass.async_block_till_done()
-    assert hass.states.get("sensor.kilowattlas_shared_production").state == "2.5"
+    assert [c.entity_id for c in entry.runtime_data.channels] == [BATTERY]

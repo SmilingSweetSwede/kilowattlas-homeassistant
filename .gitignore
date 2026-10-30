@@ -10,7 +10,8 @@ __pycache__/
 .DS_Store
 *.swp
 
-# Docker-hosted test venv (Python 3.13 for the HA test harness)
+# Docker-hosted test venvs for the HA test harness
 .venv-docker/
+.venv-docker-314/
 .pytest_cache/
 .coverage

@@ -1,187 +1,128 @@
 # Kilowattlas · Home Assistant integration
 
-Share your rooftop solar production with [Kilowattlas](https://kilowattlas.com),
-a public live map of solar production. The integration reads your existing solar
-**power** sensor and sends every reading the moment your sensor reports it. Your
-inverter or meter sets the pace: readings arriving several times a second are
-sent several times a second, readings arriving once a minute once a minute.
-Nothing is sampled, thinned or averaged on the way. Readings that cannot be sent
-right away (network outage, Home Assistant restart) are queued locally and sent
-as soon as the connection is back, so nothing is lost.
+Share what your [Energy dashboard](https://www.home-assistant.io/docs/energy/)
+measures with [Kilowattlas](https://kilowattlas.com), the public live map of
+Swedish home energy. Every reading of the Energy dashboard's power sensors
+(grid, solar, battery, home and individual devices) is sent as soon as it is
+measured, in the Energy dashboard's own sign. If you know the Energy dashboard,
+you already know how to set this up.
 
-Since 0.5.0 you can optionally share a **battery power**, **grid power** and
-**battery state of charge** sensor as well (see *Share via CheckWatt* below).
-Each is sent as its own channel; battery and grid readings are never counted
-as production.
+## Where this is heading
 
-> **Upgrading from 0.3.x?** Version 0.4.0 renames the integration (domain
-> `kilowattlas_trace_the_sun` → `kilowattlas`) to match Home Assistant core
-> conventions. Remove the old integration, update via HACS, restart, and add
-> **Kilowattlas** again. The link on kilowattlas.com is re-approved in one step.
+Kilowattlas is a public map today. This integration is meant to become the
+measurement foundation for **energy communities** (Swedish *energigemenskaper*)
+and **community virtual power plants** (cVPP) in Sweden. From 1 January 2027
+households in the same bidding zone may share electricity with each other
+([prop. 2025/26:240](https://www.riksdagen.se/sv/dokument-och-lagar/dokument/proposition/nya-lagar-om-elsystemet_hd03240/html/)).
+A cVPP is a virtual power plant owned by its members, selling flexibility to
+[Svenska kraftnät](https://www.svk.se/aktorsportalen/bidra-med-reserver/) or
+the grid operator, with the proceeds going back to the households
+([what a cVPP is](https://vb.nweurope.eu/projects/project-search/cvpp-community-based-virtual-power-plant/)).
+Kilowattlas measures, counts and organises. It never controls your equipment.
+
+Nothing changes for you today: only what is described under *Privacy* is
+shared. Any community feature will be a separate opt-in on kilowattlas.com.
+Overview and tester sign-up: https://kilowattlas.com/energigemenskap
+Join the discussion: https://github.com/SmilingSweetSwede/kilowattlas-homeassistant/discussions/1
+
+*På svenska:* integrationen är tänkt som mätgrund för energigemenskaper och
+medlemsägda virtuella kraftverk (cVPP). Energidelning blir laglig 1 januari
+2027. Inget ändras för dig i dag; framtida funktioner är ett separat val på
+kilowattlas.com.
 
 ## Requirements
 
-- A Kilowattlas account (sign in at https://kilowattlas.com).
-- A Home Assistant **power** sensor reporting your solar output in W, kW or MW
-  (for example from SolarEdge, Huawei, SMA, Fronius, Solis, a Shelly EM or a
-  P1/HAN meter). An energy-only (kWh) sensor is **not** supported.
+- Home Assistant 2026.8 or newer, and a Kilowattlas account.
+- Power sensors in the Energy dashboard: **Settings → Dashboards → Energy**,
+  the power fields of your grid, solar, battery, home and individual devices.
+  Without them, you can enter the same fields in this integration instead.
 
-## Install (via HACS)
+## Install and set up
 
 [![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=SmilingSweetSwede&repository=kilowattlas-homeassistant&category=integration)
 
-1. Click the button above, or add this repository manually in HACS
-   (⋮ → **Custom repositories**, category **Integration**).
-2. Install **Kilowattlas** and restart Home Assistant.
-3. **Settings → Devices & services → Add integration → Kilowattlas**.
+1. Install **Kilowattlas** in HACS, restart, then **Settings → Devices &
+   services → Add integration → Kilowattlas**.
+2. Read what is shared and agree. Approve the link on `kilowattlas.com/link`
+   (position prefilled from Home Assistant; add the panel capacity).
+3. Untick any Energy sensor you do not want to share. Change it later under
+   **Configure**. Sensors you add to the Energy dashboard later are shared too.
 
-## Linking
+## See that it works
 
-1. Read what is shared and tick the consent box.
-2. Home Assistant shows a short **code** and a link to `kilowattlas.com/link`.
-   Open the link, sign in and approve. Your site's position is prefilled from
-   Home Assistant's home position; adjust it, add the panel capacity, approve.
-   The dialog in Home Assistant continues by itself once you have approved.
-3. Pick your solar power sensor. Optionally pick a battery power, grid power
-   and battery state-of-charge sensor too. Done.
+**Kilowattlas** in the sidebar (administrators) shows whether this home is
+connected, every channel with the sensor it reads, the last value sent and when,
+and a tick box to stop or resume sending it. The same status is available as a
+card for your own dashboards. The Energy dashboard itself is generated by Home
+Assistant and takes no cards from integrations.
 
-To change the sensors later: **⋮ → Reconfigure** on the integration. Clearing an
-optional sensor there stops sharing it. If Kilowattlas ever stops accepting the
-link, Home Assistant asks you to re-link.
+## Built on the Energy dashboard
 
-### Sign conventions
+| Energy dashboard field | Shared as | Shown |
+|---|---|---|
+| Grid power (positive = import) | grid | only to you |
+| Solar power | production | on the map |
+| Battery power (positive = discharge), state of charge, capacity | battery | on the map |
+| Home power | consumption | only to you |
+| Individual device power | one channel per device, with its name | only to you |
 
-Kilowattlas counts grid **export** and battery **discharge** (power out of the
-battery) as positive. If your sensor reports the opposite, tick *Grid sensor
-shows import as positive* or *Battery sensor shows charging as positive* in the
-sensor step and the integration flips the sign before sending.
+Inverted sensors and separate import/export sensors are handled by the Energy
+dashboard's own power settings; this integration reads what the Energy
+dashboard reads. Without Energy settings, the integration's own form asks for
+the same fields and uses the Energy dashboard's own code for them.
 
-## Share via CheckWatt
-
-If your battery is managed by CheckWatt and you use the
-[CheckWatt integration](https://github.com/faanskit/ha-checkwatt) (a version
-that includes the power "flow" sensors with device class *power*):
-
-1. In the CheckWatt integration's options, enable **Create power sensors**
-   (*Skapa energisensorer*) so the flow sensors exist.
-2. Add or reconfigure Kilowattlas and pick:
-   - **Solar power sensor:** *Current Solar Production*
-   - **Battery power sensor (optional):** *Current Battery Power*
-   - **Grid power sensor (optional):** *Current Grid Power*
-   - **Battery state of charge (optional):** *Battery SoC*. Its
-     `charge_peak_ac`/`discharge_peak_ac` attributes give your battery's rated
-     power, which Kilowattlas stores for your installation. Battery capacity
-     in kWh is not available in Home Assistant; enter it on the website.
-3. CheckWatt's sign convention for battery and grid flow is not yet documented
-   by that integration. If the map shows your battery charging when it is
-   discharging, or import as export, tick the matching *shows ... as positive*
-   box.
-
-Readings arrive from the CheckWatt cloud about once a minute, so your
-installation is classified as a minute-rate donor. Whether *Current Solar
-Production* is the inverter's gross AC output or net of self-consumption is
-not confirmed by the CheckWatt integration; if it is net, your production is
-shown slightly lower than it is, never higher. Revenue sensors (SEK) are **not**
-shared.
-
-## What you get in Home Assistant
-
-One **Kilowattlas** service device with:
-
-- **Shared production** (kW) — the live value being shared. A proper power
-  sensor, so Home Assistant draws history and keeps long-term statistics.
-- **Sharing status** — Starting / Connected / Connection error, retrying /
-  Disconnected, access revoked.
-- Diagnostics: **Last sent**, **Queued readings**, **Rejected readings in last
-  batch**, and (disabled by default) **Measured sensor interval** and
-  **Unusable readings**.
-- A **Visit** link on the device that opens the map centred on your home.
-
-Example dashboard card:
+**CheckWatt** ([ha-checkwatt](https://github.com/faanskit/ha-checkwatt) 0.3.0)
+has no power sensors yet; solar, battery and grid power are attributes (W) of
+its *Battery SoC* sensor. Until it does, add template sensors and pick them in
+the Energy dashboard:
 
 ```yaml
-type: history-graph
-title: Solar shared to Kilowattlas
-hours_to_show: 24
-entities:
-  - entity: sensor.kilowattlas_shared_production
+template:
+  - sensor:
+      - name: "CheckWatt solar power"
+        unique_id: checkwatt_solar_power
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: "{{ state_attr('sensor.checkwatt_battery_soc', 'solar_power') | float(0) }}"
+      # Same for battery_power and grid_power.
 ```
 
-## Privacy & data sharing
+## Privacy
 
-The integration is open source and sends exactly three things:
+Sent: your home position once at linking (you confirm it on the website), each
+reading of the shared sensors with its timestamp, the battery capacity, and a
+revoke request when you remove the integration. Nothing else leaves Home
+Assistant. Shown publicly, at about 100 m, without name or account: production
+and battery. Only to you: grid, home and devices. Each channel can be set to
+public, only you, or off on kilowattlas.com, and a channel not set to public
+appears on no public page or API. Grid is private by default because public
+solar, grid and battery together give away your consumption. The service is
+free and does not sell your data.
 
-1. **Once, at linking:** Home Assistant's home position, as a suggestion for
-   where the installation is. You confirm or adjust it on the website before
-   anything is shown.
-2. **Continuously:** each reading from the power sensor you chose, as kW with
-   its timestamp — and, only if you chose them, each reading of your battery
-   power (kW), grid power (kW) and battery state of charge (%), plus the
-   battery's rated power read from the state-of-charge sensor's attributes.
-   Nothing else from Home Assistant is sent: no revenue, no addresses, no
-   account details of other integrations. The exact request is documented
-   under *How it works* below.
-3. **On removal:** a request to revoke the sharing token.
+To stop: remove the integration (revokes the token), then delete the
+installation on kilowattlas.com (erases its history).
 
-What Kilowattlas does with it:
+## Limitations
 
-- Shows your installation's position, capacity and live production
-  **publicly** on the map, without any personal identifier (no name, account
-  or e-mail). Battery power and state of charge, when shared, are shown on
-  your installation's page and as a small battery mark on the map; they are
-  never added to any production figure.
-- Keeps 15-minute averages as your production history; raw readings are kept
-  only briefly.
-- Compares your installation's performance with similar installations.
-
-The service is free. **Kilowattlas does not sell your data.** Should
-Kilowattlas ever offer services that use shared data beyond the public map, for
-example fault alerts through a service partner or aggregated data for
-electricity-market forecasting, that will be a separate, explicit choice on the
-website which you can decline while keeping the map. This integration never
-switches such a choice on.
-
-## Stopping and removing
-
-Two independent things; do both for a full stop.
-
-**Remove the integration** (Settings → Devices & services → Kilowattlas → ⋮ →
-Delete). This stops sending, removes the entities and local queue, and revokes
-the sharing token on Kilowattlas (best effort: if Home Assistant is offline at
-that moment, the token is disabled when you delete the installation on the
-website). It does **not** delete the history already stored.
-
-**Delete your data**: sign in on kilowattlas.com and delete your installation.
-This disables the token and erases the production history, position and
-capacity.
-
-## How it works
-
-- Subscribes to state changes of the chosen sensors and forwards each
-  reading, with its original timestamp (microsecond precision), to
-  `POST /api/v1/contrib/solar`. A reading is sent as soon as it arrives;
-  readings that arrive while a request is in flight go in the next request.
-- Each optional sensor is its own channel (`battery`, `grid`, `battery_soc`),
-  declared to the server by kind (`battery_power`, `net_export`,
-  `battery_soc`) so it can never be mistaken for production. Production has
-  no channel key, exactly as before 0.5.0, so existing history continues.
-- Kilowattlas computes 15-minute averages on the server. The integration does
-  no averaging.
-- Readings that fail to send wait in a queue that survives restarts and are
-  retried with backoff (10 s up to 5 min). The queue holds 20,000 readings;
-  past that the oldest are dropped first.
-- Slot size, retention and the server's preferred sample rate arrive with each
-  response and are visible in the integration's diagnostics.
-
-API client: [aiokilowattlas](https://github.com/SmilingSweetSwede/aiokilowattlas)
-(MIT). This repository tracks the code submitted to Home Assistant core;
-`scripts/sync_to_core.sh` copies it into a core checkout.
+Measurements only: no control of any device and no market bidding. Prices are
+added server-side; nothing is read from `nordpool`. Readings Home Assistant
+could not send are sent later from its recorder, for up to 10 days.
 
 ## Development
 
+API client: [aiokilowattlas](https://github.com/SmilingSweetSwede/aiokilowattlas)
+(MIT). `custom_components/kilowattlas/energy_source.py` holds the mapping from
+the Energy dashboard's model, with references to core.
+
 ```bash
-# Python 3.13 test harness in Docker (host has 3.12)
-docker run --rm -v "$PWD/.venv-docker:/venv" -v "$PWD:/repo" -w /repo python:3.13 \
+# Python 3.14 test harness in Docker (Home Assistant 2026.3+ needs 3.14.2+)
+docker run --rm -v "$PWD/.venv-docker-314:/venv" -v "$PWD:/repo" -w /repo python:3.14 \
   bash -c "/venv/bin/pytest --cov=custom_components.kilowattlas"
-python3 scripts/build_translations.py   # regenerate translations/en.json from strings.json
+python3 scripts/build_translations.py   # regenerate translations/en.json
 ```
+
+Release order: the backend accepts every kind the release declares first (an
+unknown kind rejects the whole batch), then aiokilowattlas, then this
+integration. `KILOWATTLAS_API_BASE` and `KILOWATTLAS_MAP_BASE` point the API
+client and the Visit link at a local stack.
