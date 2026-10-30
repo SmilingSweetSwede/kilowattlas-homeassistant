@@ -36,7 +36,7 @@ kilowattlas.com.
 
 ## Requirements
 
-- Home Assistant 2026.8 or newer, and a Kilowattlas account.
+- Home Assistant 2026.10 or newer, and a Kilowattlas account.
 - Power sensors in the Energy dashboard: **Settings → Dashboards → Energy**,
   the power fields of your grid, solar, battery, home and individual devices.
   Without them, you can enter the same fields in this integration instead.
