@@ -7,6 +7,11 @@ Swedish home energy. Every reading of the Energy dashboard's power sensors
 measured, in the Energy dashboard's own sign. If you know the Energy dashboard,
 you already know how to set this up.
 
+> [!TIP]
+> **Help shape energy communities in Sweden.** Households may share electricity
+> from 1 January 2027. We are building the tools for it, and want to hear what you
+> need: **[join the discussion](https://github.com/SmilingSweetSwede/kilowattlas-homeassistant/discussions/1)**.
+
 ## Where this is heading
 
 Kilowattlas is a public map today. This integration is meant to become the
@@ -23,7 +28,6 @@ Kilowattlas measures, counts and organises. It never controls your equipment.
 Nothing changes for you today: only what is described under *Privacy* is
 shared. Any community feature will be a separate opt-in on kilowattlas.com.
 Overview and tester sign-up: https://kilowattlas.com/energigemenskap
-Join the discussion: https://github.com/SmilingSweetSwede/kilowattlas-homeassistant/discussions/1
 
 *På svenska:* integrationen är tänkt som mätgrund för energigemenskaper och
 medlemsägda virtuella kraftverk (cVPP). Energidelning blir laglig 1 januari
