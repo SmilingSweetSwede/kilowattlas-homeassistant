@@ -242,16 +242,8 @@ const STYLE = `
     color: var(--primary-color); border: 1px solid var(--primary-color); text-decoration: none;
   }
   .note { margin: 12px 0 0; font-size: 13px; color: var(--secondary-text-color); }
-  /* The house from the map, in Home Assistant's colours. */
-  .figure {
-    margin: 12px 0;
-    --clerk-surface: var(--card-background-color, #fff);
-    --clerk-surface-soft: var(--secondary-background-color, #f5f5f5);
-    --clerk-accent: var(--primary-color, #03a9f4);
-    --clerk-text: var(--primary-text-color, #212121);
-    --clerk-text-muted: var(--secondary-text-color, #727272);
-    --clerk-border: var(--divider-color, #e0e0e0);
-  }
+  /* The house from the map (kilowattlas-figure.js), in Home Assistant's colours. */
+  .figure { margin: 12px 0; }
   .links { display: flex; flex-wrap: wrap; gap: 10px; }
   .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 4px; }
   .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--secondary-text-color); }
@@ -621,12 +613,14 @@ class KilowattlasStatusCard extends HTMLElement {
     return card;
   }
 
-  // The same component as Edit my plant on the map, built from its source.
+  // The same drawing as Edit my plant on the map: <kilowattlas-figure> from
+  // kilowattlas-figure.js, loaded with the same cache-busting query as this file.
   async _mountFigure(form, target) {
     try {
       const url = new URL(`kilowattlas-figure.js${new URL(import.meta.url).search}`, import.meta.url);
-      const { mountFigure } = await import(url.href);
-      form.figure = mountFigure(target, {
+      await import(url.href);
+      const figure = document.createElement("kilowattlas-figure");
+      figure.setProps({
         ...this._figureProps(form),
         isSv: (this._hass?.language || "en").startsWith("sv"),
         interactive: true,
@@ -635,8 +629,10 @@ class KilowattlasStatusCard extends HTMLElement {
         form.inputs[key].value = String(Math.round(ev.detail));
         form.inputs[key].dispatchEvent(new Event("input", { bubbles: true }));
       };
-      form.figure.$on("tilt", set("roof_tilt_deg"));
-      form.figure.$on("azimuth", set("roof_azimuth_deg"));
+      figure.addEventListener("tilt", set("roof_tilt_deg"));
+      figure.addEventListener("azimuth", set("roof_azimuth_deg"));
+      target.append(figure);
+      form.figure = figure;
     } catch (_err) {
       // Without the drawing the fields below still do everything.
       target.remove();
@@ -654,7 +650,7 @@ class KilowattlasStatusCard extends HTMLElement {
   }
 
   _updateFigure(form) {
-    form.figure?.$set(this._figureProps(form));
+    form.figure?.setProps(this._figureProps(form));
   }
 
   _readForm(form) {

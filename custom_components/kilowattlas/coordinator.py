@@ -111,6 +111,10 @@ RECORDER_COMMIT_TIMEOUT_SECONDS = 30
 RETRY_BASE_SECONDS = 10
 RETRY_MAX_SECONDS = 300
 
+# How long the cursors may wait on disk after an acknowledged batch. One write
+# per this interval instead of one per batch, for the sake of SD cards.
+SAVE_DELAY_SECONDS = 30
+
 UNAVAILABLE_STATES = {None, "", "unknown", "unavailable"}
 
 
@@ -282,6 +286,7 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
         self._unsub_retry: CALLBACK_TYPE | None = None
         self._unsub_probe: CALLBACK_TYPE | None = None
         self._unsub_probe_daily: CALLBACK_TYPE | None = None
+        self._unsub_save: CALLBACK_TYPE | None = None
 
         self._sending = False
         self._stopping = False
@@ -506,10 +511,16 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
         """Unsubscribe, make one last send attempt and persist the cursors."""
         self._stopping = True
         self._unsubscribe()
-        for unsub in (self._unsub_retry, self._unsub_probe, self._unsub_probe_daily):
+        for unsub in (
+            self._unsub_retry,
+            self._unsub_probe,
+            self._unsub_probe_daily,
+            self._unsub_save,
+        ):
             if unsub:
                 unsub()
         self._unsub_retry = self._unsub_probe = self._unsub_probe_daily = None
+        self._unsub_save = None
         if (
             (self._queue or self._legacy)
             and not self._sending
@@ -521,18 +532,41 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
         self._spill_queue()
         await self._save()
 
+    def _data_to_save(self) -> dict[str, Any]:
+        return {
+            "config": self._config,
+            "cursors": self._cursors,
+            "last_sent": self._last_sent,
+            "replay": self._replay,
+            "carried_queue": [],
+            "legacy_measurements": self._legacy,
+            "measured_sample_interval_seconds": self._measured_interval,
+        }
+
     async def _save(self) -> None:
-        await self._store.async_save(
-            {
-                "config": self._config,
-                "cursors": self._cursors,
-                "last_sent": self._last_sent,
-                "replay": self._replay,
-                "carried_queue": [],
-                "legacy_measurements": self._legacy,
-                "measured_sample_interval_seconds": self._measured_interval,
-            }
-        )
+        """Write the cursors now: for changes that must not be lost."""
+        await self._store.async_save(self._data_to_save())
+
+    @callback
+    def _save_soon(self) -> None:
+        """Write the cursors within SAVE_DELAY_SECONDS, at most once per delay.
+
+        Called after every acknowledged batch, which on fast sensors is every
+        few seconds; one write per delay instead of one per batch spares the
+        SD card. A fixed timer rather than Store.async_delay_save, which
+        postpones the write at every call and so never writes while readings
+        keep coming: after a power cut the next start would then resend
+        everything since the last write. async_stop writes directly, so a
+        clean shutdown loses nothing.
+        """
+        if self._unsub_save is not None:
+            return
+
+        async def _flush(_now: datetime) -> None:
+            self._unsub_save = None
+            await self._save()
+
+        self._unsub_save = async_call_later(self.hass, SAVE_DELAY_SECONDS, _flush)
 
     # --- capture --------------------------------------------------------------
 
@@ -776,7 +810,7 @@ class KilowattlasCoordinator(DataUpdateCoordinator[KilowattlasData]):
         if self._unavailable_logged:
             _LOGGER.info("Connection to Kilowattlas restored")
             self._unavailable_logged = False
-        await self._save()
+        self._save_soon()
         return True
 
     @callback

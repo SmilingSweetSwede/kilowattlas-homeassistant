@@ -22,3 +22,11 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+
+  # Everything HACS installs is plain source kept here: no bundles, no
+  # frameworks, nothing built from another repository.
+  shipped-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/check_shipped_source.py

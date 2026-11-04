@@ -31,6 +31,7 @@ from custom_components.kilowattlas.coordinator import (
     MAX_SEND,
     PROBE_WINDOW_SECONDS,
     RETRY_BASE_SECONDS,
+    SAVE_DELAY_SECONDS,
     to_kw,
 )
 
@@ -401,6 +402,39 @@ async def test_v3_queue_is_carried_over(
     stored = await Store(hass, 4, f"{STORAGE_KEY}_entry1").async_load()
     assert stored["carried_queue"] == []
     assert stored["measured_sample_interval_seconds"] == 5.0
+
+
+async def test_cursors_are_written_in_batches_not_per_reading(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_client: MagicMock,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An acknowledged batch schedules one write; a run of them shares it."""
+    key = f"{STORAGE_KEY}_{init_integration.entry_id}"
+
+    def on_disk() -> dict[str, Any]:
+        return (hass_storage.get(key) or {}).get("data", {}).get("last_sent", {})
+
+    hass.states.async_set(SOLAR, "5000", POWER_W)
+    await hass.async_block_till_done()
+    assert values(mock_client, "") == [5.0]
+    assert "" not in on_disk()
+
+    # A second batch well inside the delay rides on the same pending write.
+    freezer.tick(timedelta(seconds=SAVE_DELAY_SECONDS / 2))
+    async_fire_time_changed(hass)
+    hass.states.async_set(SOLAR, "6000", POWER_W)
+    await hass.async_block_till_done()
+    assert values(mock_client, "") == [5.0, 6.0]
+    assert "" not in on_disk()
+
+    # The write lands one delay after the first batch, with the latest cursor.
+    freezer.tick(timedelta(seconds=SAVE_DELAY_SECONDS / 2 + 1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert on_disk()[""]["power_kw"] == 6.0
 
 
 async def _run_probe(

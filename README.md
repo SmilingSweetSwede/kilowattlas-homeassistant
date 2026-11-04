@@ -124,7 +124,16 @@ the Energy dashboard's model, with references to core.
 docker run --rm -v "$PWD/.venv-docker-314:/venv" -v "$PWD:/repo" -w /repo python:3.14 \
   bash -c "/venv/bin/pytest --cov=custom_components.kilowattlas"
 python3 scripts/build_translations.py   # regenerate translations/en.json
+python3 scripts/check_shipped_source.py  # before a release: see below
 ```
+
+What HACS installs is plain source kept in this repository: the status page
+and the house drawing are hand-written custom elements with Home Assistant's
+theme variables, with no framework and no build step, as Home Assistant
+custom integrations are expected to be. Nothing under `custom_components/` is
+built from, or depends on, any other repository. `scripts/check_shipped_source.py`
+enforces this in CI and fails on bundles, build headers, frameworks and
+references to sibling checkouts.
 
 Release order: the backend accepts every kind the release declares first (an
 unknown kind rejects the whole batch), then aiokilowattlas, then this
