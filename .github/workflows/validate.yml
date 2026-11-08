@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: home-assistant/actions/hassfest@master
 
+  # The Marketplace's validator still runs as the HACS action.
   hacs:
     runs-on: ubuntu-latest
     steps:
@@ -23,7 +24,7 @@ jobs:
         with:
           category: integration
 
-  # Everything HACS installs is plain source kept here: no bundles, no
+  # Everything the Marketplace installs is plain source kept here: no bundles, no
   # frameworks, nothing built from another repository.
   shipped-source:
     runs-on: ubuntu-latest

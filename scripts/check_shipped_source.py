@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Everything HACS installs must be readable source that lives in this repository.
+"""Everything the Marketplace installs must be readable source that lives in this repository.
 
 Run by .github/workflows/validate.yml on every push, and by hand before a
 release:
@@ -20,9 +20,10 @@ It fails when a file under custom_components/ is
 or when a build toolchain (package.json, vite/webpack/rollup/tsconfig config)
 exists anywhere in the repository.
 
-HACS and its reviewers check exactly this: anyone must be able to read, and
-rebuild, what runs in their browser from what is in the repository. The 1.0.0
-release shipped a bundle built from a private repository and was sent back.
+The Marketplace catalog's reviewers (hacs/default) check exactly this: anyone
+must be able to read, and rebuild, what runs in their browser from what is in
+the repository. The 1.0.0 release shipped a bundle built from a private
+repository and was sent back.
 """
 
 from __future__ import annotations

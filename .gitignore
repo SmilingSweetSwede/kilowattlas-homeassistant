@@ -15,3 +15,7 @@ __pycache__/
 .venv-docker-314/
 .pytest_cache/
 .coverage
+
+# Python venv for scripts/docs_screenshots.py, and its failure screenshots
+.venv-docs/
+docs/images/install/FAILED-*.png

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copy the integration into a home-assistant/core checkout as
-# homeassistant/components/kilowattlas, stripping what only HACS needs.
+# homeassistant/components/kilowattlas, stripping what only the Marketplace install needs.
 #
 #   scripts/sync_to_core.sh ~/src/home-assistant-core
 set -euo pipefail
@@ -13,7 +13,7 @@ rm -rf "$DST" "$TESTS_DST"
 mkdir -p "$DST" "$TESTS_DST"
 rsync -a --exclude __pycache__ --exclude translations --exclude brand \
   --exclude frontend --exclude panel.py "$SRC/" "$DST/"
-# The status page is HACS only: core integrations do not ship frontend code.
+# The status page is for the Marketplace install only: core integrations do not ship frontend code.
 sed -i '/# hacs-only/d' "$DST/__init__.py"
 # Core forbids `version`, uses its own issue tracker and docs site.
 python3 - "$DST/manifest.json" <<'PY'

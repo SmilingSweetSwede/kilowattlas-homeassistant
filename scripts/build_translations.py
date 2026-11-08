@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate translations/en.json from strings.json for the HACS build.
+"""Generate translations/en.json from strings.json for the Marketplace build.
 
 Home Assistant core resolves `[%key:...%]` references and ships translations
 via Lokalise; a custom component loads translations/<lang>.json directly, so

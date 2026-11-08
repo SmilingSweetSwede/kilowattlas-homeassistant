@@ -2,8 +2,9 @@
 
 The Energy dashboard is generated and takes no cards from integrations, so the
 status has a page of its own until Home Assistant offers a place for it.
-HACS only: scripts/sync_to_core.sh strips this module and its frontend, because
-core integrations do not ship frontend code.
+Custom integration only (installed from the Marketplace): scripts/sync_to_core.sh
+strips this module and its frontend, because core integrations do not ship
+frontend code.
 
 The status is plain data from one websocket command, so anything else that may
 show it later (a card in another dashboard, a place in the Energy dashboard)

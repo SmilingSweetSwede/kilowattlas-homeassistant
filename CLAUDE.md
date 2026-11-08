@@ -1,7 +1,11 @@
 # Kilowattlas Home Assistant integration: rules for AI sessions
 
-This repository is a HACS custom integration, reviewed by the HACS and Home
-Assistant maintainers against their conventions, not ours. Read this before
+This repository is a custom integration distributed through the Home Assistant
+Marketplace (built into Home Assistant from 2026.11; it used to be HACS). It is
+reviewed by the Marketplace catalog (`hacs/default`) and Home Assistant
+maintainers against their conventions, not ours. The file, the CI action and
+the catalog keep their HACS names: `hacs.json`, `hacs/action`, `hacs/default`.
+In text for users, say Marketplace. Read this before
 changing anything.
 
 ## What ships must be source that lives here
@@ -12,7 +16,7 @@ changing anything.
 - Nothing here may be built from, copied from, or depend on another
   repository. The web app (`map_framework_2`) is private; a file written into
   this repository by a build in another repository is exactly what got the
-  1.0.0 release sent back by the HACS reviewer. If the map and the
+  1.0.0 release sent back by the catalog reviewer. If the map and the
   integration must show the same thing, write it here in plain JS and keep
   the twin in the web app in step by hand, with a comment on both sides.
 - `python3 scripts/check_shipped_source.py` enforces this and runs in CI.
@@ -40,9 +44,9 @@ changing anything.
 
 1. `python3 scripts/check_shipped_source.py`
 2. Tests in Docker (see README, Development).
-3. Review the whole repository as a HACS reviewer would, not only the diff:
+3. Review the whole repository as a catalog reviewer would, not only the diff:
    links use the current repository name, every shipped file is readable
    source, nothing references a private repository, `manifest.json` version
    is bumped.
-4. Tag, publish a GitHub release marked as latest, and if a HACS default PR
-   is open, update its links to the new release and action runs.
+4. Tag, publish a GitHub release marked as latest, and if the catalog PR
+   (`hacs/default`) is open, update its links to the new release and action runs.
