@@ -578,6 +578,8 @@ async def test_reauth_leaves_nothing_to_continue(
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     await _finish_progress(hass, result)
     assert DATA_PENDING_GRANT not in hass.data
+    # The reauth reloads the entry; let that finish before the test ends.
+    await hass.async_block_till_done()
 
 
 # --- step 3: the installation is created at the end, or not at all --------------
