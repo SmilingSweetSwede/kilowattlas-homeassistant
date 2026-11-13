@@ -3,36 +3,35 @@
     "step": {
       "user": {
         "title": "Dela dina energidata med Kilowattlas",
-        "description": "Kilowattlas är en offentlig karta över hemmens energiproduktion och en tjänst för energidelning. Den här integrationen skickar mätvärdena från effektsensorerna i din Energi-panel till kilowattlas.com så fort de mäts, och inget annat.\n\n- Ditt hems position skickas en gång som förslag; du bekräftar den på webbplatsen.\n- Sol och batteri visas offentligt på kartan med ungefär 100 m noggrannhet, utan ditt namn. Elnätets, hemmets och enskilda enheters effekt syns bara för dig.\n- Du kan ändra det per kanal på kilowattlas.com, och sluta när som helst genom att ta bort integrationen och radera installationen på webbplatsen.",
+        "description": "Kilowattlas är en offentlig karta över hemmens energi och en tjänst för energidelning. Välj vilka effektsensorer i din Energi-panel som ska delas; mätvärdena skickas när de mäts.\n\n- Sol och batteri visas på den offentliga kartan, på anläggningens plats och under det namn du ger den.\n- Elnät, hem och enheter syns bara för dig, om du inte gör dem offentliga.\n- Ditt hems position skickas en gång; du bekräftar eller ändrar den på webbplatsen.\n- På kilowattlas.com kan du göra varje sensor offentlig, privat eller stoppa den. Tar du bort integrationen stoppas allt.",
         "data": {
-          "consent": "Jag godkänner att min Energi-panels effektvärden skickas till Kilowattlas och visas som beskrivs ovan"
+          "share_all": "Dela alla sensorer i min Energi-panel",
+          "share": "Eller välj sensorer"
         },
         "data_description": {
-          "consent": "Krävs för att fortsätta."
+          "share_all": "Delar även sensorer du lägger till i Energi-panelen senare.",
+          "share": "Bara de här delas. Sensorer du lägger till senare delas inte förrän du kryssar i dem under Konfigurera."
         }
       },
       "link": {
         "title": "Godkänn kopplingen",
-        "description": "Öppna den här sidan, logga in och godkänn kopplingen:\n\n{verification_uri}\n\nDin kod: **{user_code}**\n\nDialogen fortsätter automatiskt när du har godkänt."
+        "description": "Öppna den här sidan, logga in och godkänn:\n\n{verification_uri}\n\nDin kod: **{user_code}**\n\nUppsättningen blir klar av sig själv när du har godkänt."
       },
-      "channels": {
-        "title": "Välj vad som delas",
-        "description": "De här effektsensorerna finns i din Energi-panel. Avmarkera dem du inte vill dela. Sensorer du lägger till i Energi-panelen senare delas också; du kan ändra det här när som helst och stänga av varje kanal på kilowattlas.com.",
-        "data": {
-          "share": "Dela"
-        }
+      "finish": {
+        "title": "Slutför uppsättningen",
+        "description": "Kopplingen är godkänd. Välj Skicka för att skapa din anläggning på Kilowattlas."
       },
       "energy_missing": {
         "title": "Ställ in Energi-panelen",
-        "description": "Kilowattlas delar effektsensorerna i din Energi-panel, och inga är inställda än. Lägg till dem under **Inställningar → Instrumentpaneler → Energi** (effektfälten för elnät, sol, batteri, hemmet och enskilda enheter) och kontrollera sedan igen. Eller ange samma sensorer här.",
+        "description": "Kilowattlas delar effektsensorerna i din Energi-panel, och inga är inställda än. Lägg till dem under **Inställningar → Instrumentpaneler → Energi** och kontrollera igen, eller ange sensorerna här.",
         "menu_options": {
-          "channels": "Jag har ställt in Energi-panelen, kontrollera igen",
+          "user": "Jag har ställt in Energi-panelen, kontrollera igen",
           "manual": "Ange sensorerna här i stället"
         }
       },
       "manual": {
         "title": "Ange dina sensorer",
-        "description": "Samma effektinställningar som i Energi-panelen. Fyll i det du har; allt är valfritt, men minst en sensor behövs.",
+        "description": "Samma effektinställningar som i Energi-panelen; minst en sensor behövs. Sol och batteri visas på den offentliga kartan; elnät, hem och enheter bara för dig, om du inte ändrar det på kilowattlas.com.",
         "sections": {
           "grid": {
             "name": "Elnät",
@@ -104,18 +103,21 @@
       }
     },
     "progress": {
-      "wait_for_approval": "Väntar på att du godkänner kopplingen på kilowattlas.com. Öppna sidan, logga in och ange koden **{user_code}**:\n\n{verification_uri}"
+      "wait_for_approval": "Väntar på ditt godkännande på kilowattlas.com. Öppna sidan och logga in; din kod är **{user_code}**:\n\n{verification_uri}"
     },
     "error": {
       "cannot_connect": "Det gick inte att ansluta",
-      "consent_required": "Du behöver godkänna innan integrationen kan dela dina mätvärden.",
+      "cannot_finish": "Kilowattlas gick inte att nå, så inget är inställt än. Välj Skicka för att försöka igen.",
       "invalid_power_config": "Med två sensorer behöver du välja båda.",
+      "nothing_chosen": "Välj vad som ska delas: allt, eller minst en sensor.",
       "nothing_to_share": "Välj minst en sensor."
     },
     "abort": {
+      "activation_refused": "Kilowattlas kunde inte skapa anläggningen du godkände ({reason}). Inget blev inställt, varken här eller på kilowattlas.com. Börja om och godkänn en ny koppling.",
       "already_configured": "Tjänsten är redan konfigurerad",
       "cannot_connect": "Det gick inte att ansluta",
-      "expired": "Kopplingskoden gick ut innan den godkändes. Börja om för att få en ny kod.",
+      "expired": "Kopplingskoden gick ut innan den godkändes. Inget blev inställt. Börja om för att få en ny kod.",
+      "link_lost": "Den godkända kopplingen gick ut innan uppsättningen blev klar. Inget blev inställt, varken här eller på kilowattlas.com. Börja om och godkänn en ny koppling.",
       "reauth_successful": "Återautentiseringen lyckades",
       "unique_id_mismatch": "Den godkända kopplingen hör till en annan installation än den som kopplas på nytt."
     }
@@ -131,7 +133,7 @@
       },
       "channels": {
         "title": "Välj vad som delas",
-        "description": "De här effektsensorerna finns i din Energi-panel. Avmarkera dem du inte vill dela. Sensorer du lägger till i Energi-panelen senare delas också; du kan ändra det här när som helst och stänga av varje kanal på kilowattlas.com.",
+        "description": "Effektsensorerna i din Energi-panel. Kryssa i dem som ska delas. Var och en kan också göras offentlig, privat eller stoppas på kilowattlas.com.",
         "data": {
           "share": "Dela"
         }

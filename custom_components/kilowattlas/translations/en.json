@@ -3,36 +3,35 @@
     "step": {
       "user": {
         "title": "Share your energy data with Kilowattlas",
-        "description": "Kilowattlas is a public map of home energy production and an energy-sharing service. This integration sends the readings of the power sensors in your Energy dashboard to kilowattlas.com as soon as they are measured, and nothing else.\n\n- Your home position is sent once as a suggestion; you confirm it on the website.\n- Solar and battery are shown publicly on the map, at about 100 m precision, without your name. Grid, home and individual device power are visible only to you.\n- You can change this per channel on kilowattlas.com, and stop at any time by removing this integration and deleting the installation on the website.",
+        "description": "Kilowattlas is a public map of home energy and an energy-sharing service. Choose which power sensors from your Energy dashboard to share; readings are sent as they are measured.\n\n- Solar and battery are shown on the public map, at your installation's position and under the name you give it.\n- Grid, home and device power are visible only to you, unless you make them public.\n- Your home position is sent once; you confirm or change it on the website.\n- On kilowattlas.com you can make each sensor public, private or stop it. Removing this integration stops everything.",
         "data": {
-          "consent": "I agree that my Energy dashboard's power readings are sent to Kilowattlas and shown as described above"
+          "share_all": "Share all sensors in my Energy dashboard",
+          "share": "Or choose sensors"
         },
         "data_description": {
-          "consent": "Required to continue."
+          "share_all": "Also shares sensors you add to the Energy dashboard later.",
+          "share": "Only these are shared. Sensors you add later are not, until you tick them under Configure."
         }
       },
       "link": {
         "title": "Approve the link",
-        "description": "Open this page, sign in and approve the link:\n\n{verification_uri}\n\nYour code: **{user_code}**\n\nThis dialog continues automatically once you have approved it."
+        "description": "Open this page, sign in and approve:\n\n{verification_uri}\n\nYour code: **{user_code}**\n\nThe setup finishes by itself once you have approved."
       },
-      "channels": {
-        "title": "Choose what to share",
-        "description": "These power sensors are set up in your Energy dashboard. Untick any you do not want to share. Sensors you add to the Energy dashboard later are shared too; you can change this here at any time, and switch each channel off on kilowattlas.com.",
-        "data": {
-          "share": "Share"
-        }
+      "finish": {
+        "title": "Finish the setup",
+        "description": "Your link is approved. Select Submit to create your installation on Kilowattlas."
       },
       "energy_missing": {
         "title": "Set up the Energy dashboard",
-        "description": "Kilowattlas shares the power sensors of your Energy dashboard, and none are set up yet. Add them under **Settings → Dashboards → Energy** (the power fields of grid, solar, battery, home and individual devices), then check again. Or enter the same sensors here.",
+        "description": "Kilowattlas shares the power sensors of your Energy dashboard, and none are set up yet. Add them under **Settings → Dashboards → Energy**, then check again, or enter the sensors here.",
         "menu_options": {
-          "channels": "I have set up the Energy dashboard, check again",
+          "user": "I have set up the Energy dashboard, check again",
           "manual": "Enter the sensors here instead"
         }
       },
       "manual": {
         "title": "Enter your sensors",
-        "description": "The same power settings as the Energy dashboard. Fill in what you have; everything is optional, but at least one sensor is needed.",
+        "description": "The same power settings as the Energy dashboard; at least one sensor is needed. Solar and battery are shown on the public map; grid, home and devices only to you, unless you change it on kilowattlas.com.",
         "sections": {
           "grid": {
             "name": "Grid",
@@ -104,18 +103,21 @@
       }
     },
     "progress": {
-      "wait_for_approval": "Waiting for you to approve the link on kilowattlas.com. Open the page, sign in and enter code **{user_code}**:\n\n{verification_uri}"
+      "wait_for_approval": "Waiting for your approval on kilowattlas.com. Open the page and sign in; your code is **{user_code}**:\n\n{verification_uri}"
     },
     "error": {
       "cannot_connect": "Failed to connect",
-      "consent_required": "You need to agree before the integration can share your readings.",
+      "cannot_finish": "Kilowattlas could not be reached, so nothing is set up yet. Select Submit to try again.",
       "invalid_power_config": "With two sensors, choose both of them.",
+      "nothing_chosen": "Choose what to share: everything, or at least one sensor.",
       "nothing_to_share": "Choose at least one sensor."
     },
     "abort": {
+      "activation_refused": "Kilowattlas could not create the installation you approved ({reason}). Nothing was set up, here or on kilowattlas.com. Start over and approve a new link.",
       "already_configured": "Service is already configured",
       "cannot_connect": "Failed to connect",
-      "expired": "The linking code expired before it was approved. Start over to get a new code.",
+      "expired": "The linking code expired before it was approved. Nothing was set up. Start over to get a new code.",
+      "link_lost": "The approved link ran out before the setup was finished. Nothing was set up, here or on kilowattlas.com. Start over and approve a new link.",
       "reauth_successful": "Re-authentication was successful",
       "unique_id_mismatch": "The approved link belongs to a different installation than the one being re-linked."
     }
@@ -131,14 +133,14 @@
       },
       "channels": {
         "title": "Choose what to share",
-        "description": "These power sensors are set up in your Energy dashboard. Untick any you do not want to share. Sensors you add to the Energy dashboard later are shared too; you can change this here at any time, and switch each channel off on kilowattlas.com.",
+        "description": "The power sensors in your Energy dashboard. Tick the ones to share. Each one can also be made public, private or stopped on kilowattlas.com.",
         "data": {
           "share": "Share"
         }
       },
       "manual": {
         "title": "Enter your sensors",
-        "description": "The same power settings as the Energy dashboard. Fill in what you have; everything is optional, but at least one sensor is needed.",
+        "description": "The same power settings as the Energy dashboard; at least one sensor is needed. Solar and battery are shown on the public map; grid, home and devices only to you, unless you change it on kilowattlas.com.",
         "sections": {
           "grid": {
             "name": "Grid",

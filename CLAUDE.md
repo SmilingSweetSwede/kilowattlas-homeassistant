@@ -40,6 +40,14 @@ changing anything.
   translations, quality scale and config flow. When unsure what is
   conventional, look at a core integration that does the same thing.
 
+## The newest Home Assistant is the only target
+
+The integration is written for, tested on and requires the newest Home
+Assistant release (`homeassistant` in `hacs.json`, Requirements in the README).
+No code paths, texts or install instructions for older versions. When a new
+Home Assistant release is out: update the test harness (README, Development),
+run the tests, try the setup in a real instance, then raise the minimum.
+
 ## Before a release
 
 1. `python3 scripts/check_shipped_source.py`

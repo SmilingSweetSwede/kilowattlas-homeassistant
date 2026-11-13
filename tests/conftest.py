@@ -112,7 +112,12 @@ def mock_client() -> Generator[MagicMock]:
             expires_in=60,
         )
     )
+    # A server that creates the installation at approval answers with its id;
+    # the tests of the two-phase link set an `activation_required` grant.
     client.poll_token = AsyncMock(return_value=TokenGrant(token=TOKEN, site_id=SITE_ID))
+    client.activate = AsyncMock(
+        return_value=SiteInfo(site_id=SITE_ID, name="", config={"config_version": 1})
+    )
     client.get_site = AsyncMock(
         return_value=SiteInfo(
             site_id=SITE_ID,

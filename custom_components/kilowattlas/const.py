@@ -15,7 +15,6 @@ MAP_BASE_URL = (
 )
 
 # Config entry data (set at linking, changed only by reauth).
-CONF_CONSENT = "consent"
 CONF_TOKEN = "token"
 CONF_SITE_ID = "site_id"
 
@@ -34,6 +33,14 @@ CONF_PREFERENCES = "preferences"
 # Channel keys the user chose not to share. New Energy sources are shared
 # unless excluded here (the owner can also switch any channel off on the web).
 CONF_EXCLUDED = "excluded_channels"
+# False when the user chose sensors one by one instead of "share all": a
+# sensor added to the Energy dashboard later is then not shared until the user
+# ticks it. CONF_KNOWN holds the channel keys the user has seen and decided
+# on; with CONF_SHARE_NEW off, any other key counts as excluded. Entries
+# without CONF_SHARE_NEW (set up before 1.2.0) share new sensors, as they
+# were told at the time.
+CONF_SHARE_NEW = "share_new"
+CONF_KNOWN = "known_channels"
 # Channel keys that must not follow the default naming, keyed by the power
 # entity: {entity_id: [channel_key, kind]}. Keeps the history of channels
 # created before 1.0.0 (ev_charger, heat_pump) on the same server channel.

@@ -56,6 +56,8 @@ from homeassistant.components.energy.data import (
 )
 from homeassistant.core import HomeAssistant, valid_entity_id
 
+from .const import CONF_EXCLUDED, CONF_KNOWN, CONF_SHARE_NEW
+
 _LOGGER = logging.getLogger(__name__)
 
 # Source types whose power the Energy dashboard can transform (power_config).
@@ -197,6 +199,20 @@ def resolve_channels(
             _unknown_types_logged.add(str(source_type))
             _LOGGER.debug("Energy source type %s is not shared", source_type)
     return channels
+
+
+def excluded_keys(options: Mapping[str, Any], channels: list[Channel]) -> set[str]:
+    """The keys of `channels` that are not shared.
+
+    What the user left out, and, when they chose sensors one by one
+    (CONF_SHARE_NEW off), every sensor they have not decided on yet: one added
+    to the Energy dashboard since.
+    """
+    excluded = set(options.get(CONF_EXCLUDED) or ())
+    if not options.get(CONF_SHARE_NEW, True):
+        known = set(options.get(CONF_KNOWN) or ())
+        excluded |= {c.key for c in channels if c.key not in known}
+    return excluded
 
 
 def battery_capacity_kwh(prefs: Mapping[str, Any] | None) -> float | None:

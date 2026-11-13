@@ -53,6 +53,7 @@ from .energy_source import (
     Channel,
     async_energy_preferences,
     battery_capacity_kwh,
+    excluded_keys,
     power_transforms,
     resolve_channels,
     resolve_manual_preferences,
@@ -100,12 +101,9 @@ async def async_resolve(
 ) -> tuple[list[Channel], float | None]:
     """The channels to share and the battery capacity."""
     prefs = await _async_preferences(hass, entry)
-    excluded = set(entry.options.get(CONF_EXCLUDED) or ())
-    channels = [
-        c
-        for c in resolve_channels(prefs, entry.options.get(CONF_KEY_OVERRIDES))
-        if c.key not in excluded
-    ]
+    available = resolve_channels(prefs, entry.options.get(CONF_KEY_OVERRIDES))
+    excluded = excluded_keys(entry.options, available)
+    channels = [c for c in available if c.key not in excluded]
     # A battery's size says it exists: unticked, it stays home with its readings.
     shares_battery = any(
         c.kind in (KIND_BATTERY_POWER, KIND_BATTERY_SOC) for c in channels

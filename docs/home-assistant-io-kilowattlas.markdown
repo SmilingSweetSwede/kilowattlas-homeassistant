@@ -23,7 +23,7 @@ The **Kilowattlas** {% term integration %} shares the power readings of your [En
 - A Kilowattlas account. Sign in at [kilowattlas.com](https://kilowattlas.com).
 - Power sensors in the Energy dashboard: the power fields of your grid, solar panels, battery, home or individual devices. If you do not use the Energy dashboard, you can enter the same fields during setup instead.
 
-During setup you are asked to agree to what is shared. Solar and battery are shown publicly on the map at about 100 m precision, without any personal identifier. Grid, home and individual device power are visible only to you. Each channel can be set to public, only you, or off on kilowattlas.com.
+During setup you choose what is shared: all power sensors of your Energy dashboard, or sensors one by one. Solar and battery are shown publicly on the map, at the installation's position and under the name you give it. Grid, home and individual device power are visible only to you unless you make them public. Each channel can be set to public, only you, or off on kilowattlas.com.
 
 {% include integrations/config_flow.md %}
 

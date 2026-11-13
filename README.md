@@ -46,7 +46,7 @@ kilowattlas.com.
 
 ## Requirements
 
-- Home Assistant 2026.10 or newer, and a Kilowattlas account.
+- Home Assistant 2026.11 or newer, and a Kilowattlas account.
 - Power sensors in the Energy dashboard: **Settings → Dashboards → Energy**,
   the power fields of your grid, solar, battery, home and individual devices.
   Without them, you can enter the same fields in this integration instead.
@@ -88,27 +88,29 @@ your own (for example `http://homeassistant.local:8123`). Without the button:
 1. The setup opens by itself after the install. If you closed it, select
    **Set up** on Kilowattlas' page in the Marketplace, or go to **Settings →
    Devices & services → Add integration → Kilowattlas**.
-2. Read what is shared, turn on the toggle to agree, and select **Submit**.
+2. Read what is shared and choose: all sensors of your Energy dashboard, or
+   tick them one by one. Select **Submit**. Change it later under
+   **Configure**. With "all", sensors you add to the Energy dashboard later
+   are shared too; with a selection, they are not until you tick them.
 3. Open the link Home Assistant shows, to `kilowattlas.com/link`, and sign in
    or create an account. Choose which installation it is (one you added on
    the map, or a new one), give it a name (shown publicly, so not your
    address), check the position prefilled from Home Assistant, add the peak
-   power in kW, tick that you accept, and select **Approve link**. Home
-   Assistant continues by itself.
-4. Untick any Energy sensor you do not want to share, and select **Submit**.
-   Change it later under **Configure**. Sensors you add to the Energy
-   dashboard later are shared too.
-5. Optionally choose an area for the device, and select **Skip and finish**.
+   power in kW, tick that you accept, and select **Approve link**, then
+   **Back to Home Assistant**. Home Assistant then finishes by itself, also
+   when its tab was in the background for a while, and that is when your
+   installation is created on Kilowattlas: a setup that stops before it
+   leaves nothing behind, there or here. If the setup dialog is gone, start
+   the setup again: it uses the link you approved.
+4. Optionally choose an area for the device, and select **Skip and finish**.
 
-![The first setup step: what is shared, with the consent toggle marked as step 2, and Submit](https://raw.githubusercontent.com/SmilingSweetSwede/kilowattlas-homeassistant/main/docs/images/install/2-consent.png)
+![The first setup step: what is shared, with the choice of sensors marked as step 2, and Submit](https://raw.githubusercontent.com/SmilingSweetSwede/kilowattlas-homeassistant/main/docs/images/install/2-consent.png)
 
 ![The setup waiting for approval, with the link to Kilowattlas marked as step 3](https://raw.githubusercontent.com/SmilingSweetSwede/kilowattlas-homeassistant/main/docs/images/install/2-code.png)
 
 ![The Kilowattlas link page, with the name marked as step 3, peak power, the consent box and Approve link; the position is blurred](https://raw.githubusercontent.com/SmilingSweetSwede/kilowattlas-homeassistant/main/docs/images/install/2-link.png)
 
-![The list of Energy dashboard sensors to share, marked as step 4, and Submit](https://raw.githubusercontent.com/SmilingSweetSwede/kilowattlas-homeassistant/main/docs/images/install/2-sensors.png)
-
-![Name and assign, with Skip and finish marked as step 5](https://raw.githubusercontent.com/SmilingSweetSwede/kilowattlas-homeassistant/main/docs/images/install/2-finish.png)
+![Name and assign, with Skip and finish marked as step 4](https://raw.githubusercontent.com/SmilingSweetSwede/kilowattlas-homeassistant/main/docs/images/install/2-finish.png)
 
 Then check that readings arrive: see *See that it works* below.
 
@@ -117,13 +119,6 @@ Then check that readings arrive: see *See that it works* below.
 The Marketplace shows new versions as an update under **Settings → Updates**,
 like Home Assistant's own updates. Install it, and restart if Home Assistant
 asks you to.
-
-### Home Assistant 2026.10
-
-The Marketplace is built in from 2026.11. On 2026.10, Kilowattlas is in
-[HACS](https://www.hacs.xyz/) under the same name: search for it there,
-install, restart and continue from step 2. When you update Home Assistant to
-2026.11, the Marketplace takes over the installation and keeps updating it.
 
 ### Without the Marketplace
 
@@ -193,8 +188,9 @@ template:
 Sent: your home position once at linking (you confirm it on the website), each
 reading of the shared sensors with its timestamp, the battery capacity, and a
 revoke request when you remove the integration. Nothing else leaves Home
-Assistant. Shown publicly, at about 100 m, without name or account: production
-and battery. Only to you: grid, home and devices. Each channel can be set to
+Assistant. Shown publicly, at the installation's position and under the name
+you give it: production and battery. Only to you, unless you change it: grid,
+home and devices. Each channel can be set to
 public, only you, or off on kilowattlas.com, and a channel not set to public
 appears on no public page or API. Grid is private by default because public
 solar, grid and battery together give away your consumption. The service is
@@ -216,9 +212,11 @@ API client: [aiokilowattlas](https://github.com/SmilingSweetSwede/aiokilowattlas
 the Energy dashboard's model, with references to core.
 
 ```bash
-# Python 3.14 test harness in Docker (Home Assistant 2026.3+ needs 3.14.2+)
+# Tests in Docker, always against the newest Home Assistant: the first line
+# moves the test harness, and with it Home Assistant, to the latest release.
 docker run --rm -v "$PWD/.venv-docker-314:/venv" -v "$PWD:/repo" -w /repo python:3.14 \
-  bash -c "/venv/bin/pytest --cov=custom_components.kilowattlas"
+  bash -c "/venv/bin/pip install -q -U pytest-homeassistant-custom-component && \
+           /venv/bin/pytest --cov=custom_components.kilowattlas"
 python3 scripts/build_translations.py   # regenerate translations/en.json
 python3 scripts/check_shipped_source.py  # before a release: see below
 ```
@@ -233,5 +231,8 @@ references to sibling checkouts.
 
 Release order: the backend accepts every kind the release declares first (an
 unknown kind rejects the whole batch), then aiokilowattlas, then this
-integration. `KILOWATTLAS_API_BASE` and `KILOWATTLAS_MAP_BASE` point the API
+integration. The same order holds for the link: the backend
+must know `device/activate` (1.2.0 asks for it) before this integration is
+released; against an older backend the integration falls back to the
+installation being created at approval. `KILOWATTLAS_API_BASE` and `KILOWATTLAS_MAP_BASE` point the API
 client and the Visit link at a local stack.

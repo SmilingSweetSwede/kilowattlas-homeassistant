@@ -21,11 +21,59 @@ window.customIcons.kilowattlas = {
   getIcon: async () => ({ path: LOGO, viewBox: "0 0 24 24" }),
 };
 
+// Right after the integration is set up, Home Assistant adds the sidebar entry
+// and loads this file at the same time. A sidebar that is drawn first asks for
+// "kilowattlas:logo" before the lines above have run. <ha-icon> then decides
+// that the name belongs to an old-style icon set and keeps drawing it that
+// way, also when it is given the same name again: the entry stayed without
+// its logo until the page was loaded again. The only thing that makes
+// <ha-icon> change its mind is being given a Material Design icon. So every
+// <ha-icon> already showing one of our icons gets one for a moment, and then
+// its own name back.
+const ICON_PREFIX = "kilowattlas:";
+const RESET_ICON = "mdi:circle-small";
+const MAX_SHADOW_DEPTH = 12;
+
+function redrawIcons(root, depth) {
+  for (const node of root.querySelectorAll("*")) {
+    // Only an icon stuck in the old-style mode: one that already shows the
+    // logo is left alone, so a normal page load never makes it flicker.
+    if (
+      node.localName === "ha-icon" &&
+      typeof node.icon === "string" &&
+      node.icon.startsWith(ICON_PREFIX) &&
+      node._legacy !== false
+    ) {
+      const name = node.icon;
+      node.icon = RESET_ICON;
+      Promise.resolve(node.updateComplete).then(() => {
+        if (node.icon === RESET_ICON) node.icon = name;
+      });
+    }
+    if (node.shadowRoot && depth < MAX_SHADOW_DEPTH) redrawIcons(node.shadowRoot, depth + 1);
+  }
+}
+
+// Now, and once more for a sidebar entry drawn while this file was loading. An
+// icon created after that finds the logo by itself.
+for (const delay of [0, 1500]) {
+  setTimeout(() => {
+    try {
+      redrawIcons(document, 0);
+    } catch (err) {
+      // The logo is decoration: never let it stop the page.
+    }
+  }, delay);
+}
+
 const TICK_MS = 1000;
 // A change made on the map shows up here while the page is open.
 const DETAILS_REFRESH_MS = 30000;
 const DISCUSSIONS_URL = "https://github.com/SmilingSweetSwede/kilowattlas-homeassistant/discussions/1";
 const FACEBOOK_URL = "https://www.facebook.com/groups/samnatet";
+const CONTACT_EMAIL = "admin@kilowattlas.com";
+const CONTACT_PHONE = "+46725711065";
+const CONTACT_PHONE_SHOWN = "+46 72 571 10 65";
 
 const TEXT = {
   sv: {
@@ -101,6 +149,8 @@ const TEXT = {
     communityTitle: "Var med och bygg energigemenskaper",
     communityText: "Kilowattlas utvecklar en lösning som ska göra det möjligt att bilda energigemenskaper. Från den 1 januari 2027 får hushåll i samma elområde dela el med varandra. Var med och påverka hur det ska fungera.",
     fundText: "Är du intresserad? Vi vill också diskutera förutsättningarna för en elhandelsfond för småsparare. Det finns ingen sådan fond i dag, och det här är inget erbjudande.",
+    contact: "Hör gärna av dig om du har frågor:",
+    contactPhone: "tel",
     discuss: "Delta i diskussionen",
     facebook: "Facebook-gruppen",
     aboutTitle: "Vad är en energigemenskap och ett cVPP?",
@@ -188,6 +238,8 @@ const TEXT = {
     communityTitle: "Help build energy communities",
     communityText: "Kilowattlas is developing a solution to make it possible to form energy communities. From 1 January 2027, households in the same bidding zone may share electricity with each other. Help shape how it should work.",
     fundText: "Interested? We also want to discuss what it would take to set up an electricity trading fund for small savers. No such fund exists today, and this is not an offer.",
+    contact: "Please reach out if you have any questions:",
+    contactPhone: "tel",
     discuss: "Join the discussion",
     facebook: "Facebook group (in Swedish)",
     aboutTitle: "What are energy communities and cVPPs?",
@@ -291,6 +343,8 @@ const STYLE = `
   .community h3 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.25; }
   .community > p { margin: 0 0 12px; font-size: 15px; line-height: 1.5; }
   .community > .actions { margin-top: 16px; }
+  .community > .contact { font-size: 14px; }
+  .community > .contact a { color: #fff; font-weight: 600; }
   .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
   .action {
     display: inline-flex; align-items: center; gap: 8px;
@@ -790,6 +844,14 @@ class KilowattlasStatusCard extends HTMLElement {
       link("action", t.facebook, FACEBOOK_URL, FACEBOOK_ICON)
     );
     card.append(actions);
+
+    const contact = el("p", "contact", `${t.contact} `);
+    const mail = el("a", "", CONTACT_EMAIL);
+    mail.href = `mailto:${CONTACT_EMAIL}`;
+    const phone = el("a", "", CONTACT_PHONE_SHOWN);
+    phone.href = `tel:${CONTACT_PHONE}`;
+    contact.append(mail, `, ${t.contactPhone} `, phone);
+    card.append(contact);
 
     const details = document.createElement("details");
     details.open = this._aboutOpen === true;

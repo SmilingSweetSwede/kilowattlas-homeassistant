@@ -30,7 +30,14 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import CONF_EXCLUDED, DOMAIN, MAP_BASE_URL, SIGNAL_STATUS_UPDATED
+from .const import (
+    CONF_EXCLUDED,
+    CONF_KNOWN,
+    DOMAIN,
+    MAP_BASE_URL,
+    SIGNAL_STATUS_UPDATED,
+)
+from .energy_source import excluded_keys
 from .sensor import map_url
 
 PANEL_PATH = DOMAIN
@@ -126,10 +133,11 @@ async def _async_channel_rows(
 ) -> list[dict[str, Any]]:
     """Every channel of the installation: what it reads, and if and what it sent."""
     coordinator = entry.runtime_data if loaded else None
-    excluded = set(entry.options.get(CONF_EXCLUDED) or ())
+    available = await _async_available(hass, entry)
+    excluded = excluded_keys(entry.options, available)
     last_sent = coordinator.last_sent if coordinator else {}
     rows = []
-    for channel in await _async_available(hass, entry):
+    for channel in available:
         state = hass.states.get(channel.entity_id)
         last = last_sent.get(channel.key) or {}
         rows.append(
@@ -257,8 +265,15 @@ async def ws_set_shared(
         excluded.discard(key)
     else:
         excluded.add(key)
+    # Either way the user has now decided on this sensor.
+    known = set(entry.options.get(CONF_KNOWN) or ()) | {key}
     hass.config_entries.async_update_entry(
-        entry, options={**entry.options, CONF_EXCLUDED: sorted(excluded)}
+        entry,
+        options={
+            **entry.options,
+            CONF_EXCLUDED: sorted(excluded),
+            CONF_KNOWN: sorted(known),
+        },
     )
     connection.send_result(msg["id"])
 

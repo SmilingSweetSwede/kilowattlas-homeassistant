@@ -20,7 +20,7 @@
   "issue_tracker": "https://github.com/SmilingSweetSwede/kilowattlas-homeassistant/issues",
   "quality_scale": "bronze",
   "requirements": [
-    "aiokilowattlas==0.6.0"
+    "aiokilowattlas==0.7.0"
   ],
-  "version": "1.1.0"
+  "version": "1.2.0"
 }
